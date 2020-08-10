@@ -4,6 +4,9 @@ import ./channel
 import ./exchange
 import ./queue
 import ./basic
+import ./tx
+import ./confirm
+import ./props
 
-export connection, channel, exchange, queue, basic
 export mthd except MethodObj
+export connection, channel, exchange, queue, basic, tx, confirm, props

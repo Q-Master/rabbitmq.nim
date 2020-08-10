@@ -2,85 +2,84 @@ import streams
 import ./mthd
 import ../data
 
-type ChannelOpen* = ref object of Method
-  outOfBand: string
+type 
+  ChannelOpen* = ref object of Method
+    outOfBand: string
+  ChannelOpenOk* = ref object of Method
+    channelId: string
+  ChannelFlow* = ref object of Method
+    active: bool
+  ChannelFlowOk* = ref object of Method
+    active: bool
+  ChannelClose* = ref object of Method
+    replyCode: uint16
+    replyText: string
+    classId: uint16
+    methodId: uint16
+  ChannelCloseOk* = ref object of Method
+
+#--------------- Channel.Open ---------------#
 
 proc newChannelOpen*(outOfBand = ""): ChannelOpen =
   result.new
   result.initMethod(true, 0x0014000A)
   result.outOfBand = outOfBand
 
-method decode*(self: ChannelOpen, encoded: Stream): ChannelOpen =
-  self.outOfBand = encoded.readShortString()
+proc decode*(_: type[ChannelOpen], encoded: Stream): ChannelOpen =
+  let outOfBand = encoded.readShortString()
+  result = newChannelOpen(outOfBand)
 
-method encode*(self: ChannelOpen): string =
-  var s = newStringStream("")
-  s.writeShortString(self.outOfBand)
-  result = s.readAll()
-  s.close()
+proc encode*(self: ChannelOpen, to: Stream) =
+  to.writeShortString(self.outOfBand)
 
-type ChannelOpenOk* = ref object of Method
-  channelId: string
+#--------------- Channel.OpenOk ---------------#
 
 proc newChannelOpenOk*(channelId = ""): ChannelOpenOk =
   result.new
   result.initMethod(false, 0x0014000B)
   result.channelId = channelId
 
-method decode*(self: ChannelOpenOk, encoded: Stream): ChannelOpenOk =
-  self.channelId = encoded.readString()
+proc decode*(_: type[ChannelOpenOk], encoded: Stream): ChannelOpenOk =
+  let channelId = encoded.readString()
+  result = newChannelOpenOk(channelId)
 
-method encode*(self: ChannelOpenOk): string =
-  var s = newStringStream("")
-  s.writeString(self.channelId)
-  result = s.readAll()
-  s.close()
+proc encode*(self: ChannelOpenOk, to: Stream) =
+  to.writeString(self.channelId)
 
-type ChannelFlow* = ref object of Method
-  active: bool
+#--------------- Channel.Flow ---------------#
 
 proc newChannelFlow*(active = false): ChannelFlow =
   result.new
   result.initMethod(true, 0x00140014)
   result.active = active
 
-method decode*(self: ChannelFlow, encoded: Stream): ChannelFlow =
+proc decode*(_: type[ChannelFlow], encoded: Stream): ChannelFlow =
   let bbuf = encoded.readUint8()
-  self.active = (bbuf and 0x01) != 0
-  return self
+  let active = (bbuf and 0x01) != 0
+  result = newChannelFlow(active)
 
-method encode*(self: ChannelFlow): string =
-  var s = newStringStream("")
+proc encode*(self: ChannelFlow, to: Stream) =
   let bbuf: uint8 = (if self.active: 0x01 else: 0x00)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type ChannelFlowOk* = ref object of ChannelFlow
+#--------------- Channel.FlowOk ---------------#
 
 proc newChannelFlowOk*(active = false): ChannelFlowOk =
   result.new
   result.initMethod(false, 0x00140015)
 
-method decode*(self: ChannelFlowOk, encoded: Stream): ChannelFlowOk =
+proc decode*(_: type[ChannelFlowOk], encoded: Stream): ChannelFlowOk =
   let bbuf = encoded.readUint8()
-  self.active = (bbuf and 0x01) != 0
-  return self
+  let active = (bbuf and 0x01) != 0
+  result = newChannelFlowOk(active)
 
-method encode*(self: ChannelFlowOk): string =
-  var s = newStringStream("")
+proc encode*(self: ChannelFlowOk, to: Stream) =
   let bbuf: uint8 = (if self.active: 0x01 else: 0x00)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type ChannelClose* = ref object of Method
-  replyCode: uint16
-  replyText: string
-  classId: uint16
-  methodId: uint16
+#--------------- Channel.Close ---------------#
 
-proc newConnectionClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 = 0, methodId: uint16 = 0): ChannelClose =
+proc newChannelClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 = 0, methodId: uint16 = 0): ChannelClose =
   result.new
   result.initMethod(true, 0x00140028)
   result.replyCode = replyCode
@@ -88,24 +87,25 @@ proc newConnectionClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 
   result.classId = classId
   result.methodId = methodId
 
-method decode*(self: ChannelClose, encoded: Stream): ChannelClose =
-  self.replyCode = encoded.readBigEndianU16()
-  self.replyText = encoded.readShortString()
-  self.classId = encoded.readUint16()
-  self.methodId = encoded.readUint16()
-  return self
+proc decode*(_: type[ChannelClose], encoded: Stream): ChannelClose =
+  let replyCode = encoded.readBigEndianU16()
+  let replyText = encoded.readShortString()
+  let classId = encoded.readUint16()
+  let methodId = encoded.readUint16()
+  result = newChannelClose(replyCode, replyText, classId, methodId)
 
-method encode*(self: ChannelClose): string =
-  var s = newStringStream("")
-  s.writeBigEndian16(self.replyCode)
-  s.writeShortString(self.replyText)
-  s.writeBigEndian16(self.classId)
-  s.writeBigEndian16(self.methodId)
-  result = s.readAll()
-  s.close()
+proc encode*(self: ChannelClose, to: Stream) =
+  to.writeBigEndian16(self.replyCode)
+  to.writeShortString(self.replyText)
+  to.writeBigEndian16(self.classId)
+  to.writeBigEndian16(self.methodId)
 
-type ChannelCloseOk* = ref object of Method
+#--------------- Channel.CloseOk ---------------#
 
 proc newChannelCloseOk*(): ChannelCloseOk =
   result.new
   result.initMethod(false, 0x00140029)
+
+proc decode*(_: type[ChannelCloseOk], encoded: Stream): ChannelCloseOk = newChannelCloseOk()
+
+proc encode*(self: ChannelCloseOk, to: Stream) = discard

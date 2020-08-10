@@ -3,10 +3,74 @@ import tables
 import ./mthd
 import ../data
 
-type BasicQos* = ref object of Method
-  prefetchSize: uint32
-  prefetchCount: uint16
-  globalQos: bool
+type 
+  BasicQos* = ref object of Method
+    prefetchSize: uint32
+    prefetchCount: uint16
+    globalQos: bool
+  BasicQosOk* = ref object of Method
+  BasicConsume* = ref object of Method
+    ticket: uint16
+    queue: string
+    consumerTag: string
+    noLocal: bool
+    noAck: bool
+    exclusive: bool
+    noWait: bool
+    arguments: TableRef[string, DataTable]
+  BasicConsumeOk* = ref object of Method
+    consumerTag: string
+  BasicCancel* = ref object of Method
+    consumerTag: string
+    noWait: bool
+  BasicCancelOk* = ref object of Method
+    consumerTag: string
+  BasicPublish* = ref object of Method
+    ticket: uint16
+    exchange: string
+    routingKey: string
+    mandatory: bool
+    immediate: bool
+  BasicReturn* = ref object of Method
+    replyCode: uint16
+    replyText: string
+    exchange: string
+    routingKey: string
+  BasicDeliver* = ref object of Method
+    consumerTag: string
+    deliveryTag: uint64
+    redelivered: bool
+    exchange: string
+    routingKey: string
+  BasicGet* = ref object of Method
+    ticket: uint16
+    queue: string
+    noAck: bool
+  BasicGetOk* = ref object of Method
+    deliveryTag: uint64
+    redelivered: bool
+    exchange: string
+    routingKey: string
+    messageCount: uint32
+  BasicGetEmpty* = ref object of Method
+    clusterId: string
+  BasicAck* = ref object of Method
+    deliveryTag: uint64
+    multiple: bool
+  BasicReject* = ref object of Method
+    deliveryTag: uint64
+    requeue: bool
+  BasicRecoverAsync* = ref object of Method
+    requeue: bool
+  BasicRecover* = ref object of Method
+    requeue: bool
+  BasicRecoverOk* = ref object of Method
+  BasicNack* = ref object of Method
+    deliveryTag: uint64
+    multiple: bool
+    requeue: bool
+
+#--------------- Basic.Qos ---------------#
 
 proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false): BasicQos =
   result.new
@@ -14,37 +78,31 @@ proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false
   result.prefetchSize = prefetchSize
   result.prefetchCount = prefetchCount
 
-method decode*(self: BasicQos, encoded: Stream): BasicQos =
-  self.prefetchSize = encoded.readBigEndianU32()
-  self.prefetchCount = encoded.readBigEndianU16()
+proc decode*(_: type[BasicQos], encoded: Stream): BasicQos =
+  let prefetchSize = encoded.readBigEndianU32()
+  let prefetchCount = encoded.readBigEndianU16()
   let bbuf = encoded.readBigEndianU8()
-  self.globalQos = (bbuf and 0x01) != 0
-  return self
+  let globalQos = (bbuf and 0x01) != 0
+  result = newBasicQos(prefetchSize, prefetchCount, globalQos)
 
-method encode*(self: BasicQos): string =
-  var s = newStringStream("")
-  s.writeBigEndian32(self.prefetchSize)
-  s.writeBigEndian16(self.prefetchCount)
+proc encode*(self: BasicQos, to: Stream) =
+  to.writeBigEndian32(self.prefetchSize)
+  to.writeBigEndian16(self.prefetchCount)
   let bbuf: uint8 = (if self.globalQos: 0x01 else: 0x00)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicQosOk* = ref object of Method
+#--------------- Basic.QosOk ---------------#
 
 proc newBasicQosOk*(): BasicQosOk =
   result.new
   result.initMethod(false, 0x003C000B)
 
-type BasicConsume* = ref object of Method
-  ticket: uint16
-  queue: string
-  consumerTag: string
-  noLocal: bool
-  noAck: bool
-  exclusive: bool
-  noWait: bool
-  arguments: TableRef[string, DataTable]
+proc decode*(_: type[BasicQosOk], encoded: Stream): BasicQosOk =
+  result = newBasicQosOk()
+
+proc encode*(self: BasicQosOk, to: Stream) = discard
+
+#--------------- Basic.Consume ---------------#
 
 proc newBasicConsume*(
   ticket=0.uint16, 
@@ -66,53 +124,45 @@ proc newBasicConsume*(
   result.noWait = noWait
   result.arguments = arguments
 
-method decode*(self: BasicConsume, encoded: Stream): BasicConsume =
-  self.ticket = encoded.readBigEndianU16()
-  self.queue = encoded.readShortString()
-  self.consumerTag = encoded.readShortString()
+proc decode*(_: type[BasicConsume], encoded: Stream): BasicConsume =
+  let ticket = encoded.readBigEndianU16()
+  let queue = encoded.readShortString()
+  let consumerTag = encoded.readShortString()
   let bbuf = encoded.readBigEndianU8()
-  self.noLocal = (bbuf and 0x01) != 0
-  self.noAck = (bbuf and 0x02) != 0
-  self.exclusive = (bbuf and 0x04) != 0
-  self.noWait =  (bbuf and 0x08) != 0
-  self.arguments = encoded.decodeTable()
+  let noLocal = (bbuf and 0x01) != 0
+  let noAck = (bbuf and 0x02) != 0
+  let exclusive = (bbuf and 0x04) != 0
+  let noWait =  (bbuf and 0x08) != 0
+  let arguments = encoded.decodeTable()
+  result = newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, arguments)
 
-method encode*(self: BasicConsume): string =
-  var s = newStringStream("")
-  s.writeBigEndian16(self.ticket)
-  s.writeShortString(self.queue)
-  s.writeShortString(self.consumerTag)
+proc encode*(self: BasicConsume, to: Stream) =
+  to.writeBigEndian16(self.ticket)
+  to.writeShortString(self.queue)
+  to.writeShortString(self.consumerTag)
   let bbuf: uint8 = 0x00.uint8 or 
   (if self.noLocal: 0x01 else: 0x00) or 
   (if self.noAck: 0x02 else: 0x00) or 
   (if self.exclusive: 0x04 else: 0x00) or 
   (if self.noWait: 0x08 else: 0x00)
-  s.writeBigEndian8(bbuf)
-  s.encodeTable(self.arguments)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
+  to.encodeTable(self.arguments)
 
-type BasicConsumeOk* = ref object of Method
-  consumerTag: string
+#--------------- Basic.ConsumeOk ---------------#
 
 proc newBasicConsumeOk*(consumerTag=""): BasicConsumeOk =
   result.new
   result.initMethod(false, 0x003C0015)
   result.consumerTag = consumerTag
 
-method decode*(self: BasicConsumeOk, encoded: Stream): BasicConsumeOk =
-  self.consumerTag = encoded.readShortString()
-  return self
+proc decode*(_: type[BasicConsumeOk], encoded: Stream): BasicConsumeOk =
+  let consumerTag = encoded.readShortString()
+  result = newBasicConsumeOk(consumerTag)
 
-method encode*(self: BasicConsumeOk): string =
-  var s = newStringStream("")
-  s.writeShortString(self.consumerTag)
-  result = s.readAll()
-  s.close()
+proc encode*(self: BasicConsumeOk, to: Stream) =
+  to.writeShortString(self.consumerTag)
 
-type BasicCancel* = ref object of Method
-  consumerTag: string
-  noWait: bool
+#--------------- Basic.Cancel ---------------#
 
 proc newBasicCancel*(consumerTag="", noWait=false): BasicCancel =
   result.new
@@ -120,44 +170,32 @@ proc newBasicCancel*(consumerTag="", noWait=false): BasicCancel =
   result.consumerTag = consumerTag
   result.noWait = noWait
 
-method decode*(self: BasicCancel, encoded: Stream): BasicCancel =
-  self.consumerTag = encoded.readShortString()
+proc decode*(_: type[BasicCancel], encoded: Stream): BasicCancel =
+  let consumerTag = encoded.readShortString()
   let bbuf = encoded.readBigEndianU8()
-  self.noWait = (bbuf and 0x01) != 0
-  return self
+  let noWait = (bbuf and 0x01) != 0
+  result = newBasicCancel(consumerTag, noWait)
 
-method encode*(self: BasicCancel): string =
-  var s = newStringStream("")
-  s.writeShortString(self.consumerTag)
+proc encode*(self: BasicCancel, to: Stream) =
+  to.writeShortString(self.consumerTag)
   let bbuf = (if self.noWait: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicCancelOk* = ref object of Method
-  consumerTag: string
+#--------------- Basic.CancelOk ---------------#
 
 proc newBasicCancelOk*(consumerTag=""): BasicCancelOk =
   result.new
   result.initMethod(false, 0x003C001F)
   result.consumerTag = consumerTag
 
-method decode*(self: BasicCancelOk, encoded: Stream): BasicCancelOk =
-  self.consumerTag = encoded.readShortString()
-  return self
+proc decode*(_: type[BasicCancelOk], encoded: Stream): BasicCancelOk =
+  let consumerTag = encoded.readShortString()
+  result = newBasicCancelOk(consumerTag)
 
-method encode*(self: BasicCancelOk): string =
-  var s = newStringStream("")
-  s.writeShortString(self.consumerTag)
-  result = s.readAll()
-  s.close()
+proc encode*(self: BasicCancelOk, to: Stream) =
+  to.writeShortString(self.consumerTag)
 
-type BasicPublish* = ref object of Method
-  ticket: uint16
-  exchange: string
-  routingKey: string
-  mandatory: bool
-  immediate: bool
+#--------------- Basic.Publish ---------------#
 
 proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=false, immediate=false): BasicPublish =
   result.new
@@ -168,32 +206,25 @@ proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=fal
   result.mandatory = mandatory
   result.immediate = immediate
 
-method decode*(self: BasicPublish, encoded: Stream): BasicPublish =
-  self.ticket = encoded.readBigEndianU16()
-  self.exchange = encoded.readShortString()
-  self.routingKey = encoded.readShortString()
+proc decode*(_: BasicPublish, encoded: Stream): BasicPublish =
+  let ticket = encoded.readBigEndianU16()
+  let exchange = encoded.readShortString()
+  let routingKey = encoded.readShortString()
   let bbuf = encoded.readBigEndianU8()
-  self.mandatory = (bbuf and 0x01) != 0
-  self.immediate = (bbuf and 0x02) != 0
-  return self
+  let mandatory = (bbuf and 0x01) != 0
+  let immediate = (bbuf and 0x02) != 0
+  result = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
 
-method encode*(self: BasicPublish): string =
-  var s = newStringStream("")
-  s.writeBigEndian16(self.ticket)
-  s.writeShortString(self.exchange)
-  s.writeShortString(self.routingKey)
+proc encode*(self: BasicPublish, to: Stream) =
+  to.writeBigEndian16(self.ticket)
+  to.writeShortString(self.exchange)
+  to.writeShortString(self.routingKey)
   let bbuf: uint8 = 0x00.uint8 or 
   (if self.mandatory: 0x01 else: 0x00) or 
   (if self.immediate: 0x02 else: 0x00)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicReturn* = ref object of Method
-  replyCode: uint16
-  replyText: string
-  exchange: string
-  routingKey: string
+#--------------- Basic.Return ---------------#
 
 proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey=""): BasicReturn =
   result.new
@@ -203,28 +234,20 @@ proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey="
   result.exchange = exchange
   result.routingKey = routingKey
 
-method encode*(self: BasicReturn, encoded: Stream): BasicReturn =
-  self.replyCode = encoded.readBigEndianU16()
-  self.replyText = encoded.readShortString()
-  self.exchange = encoded.readShortString()
-  self.routingKey = encoded.readShortString()
-  return self
+proc encode*(_: type[BasicReturn], encoded: Stream): BasicReturn =
+  let replyCode = encoded.readBigEndianU16()
+  let replyText = encoded.readShortString()
+  let exchange = encoded.readShortString()
+  let routingKey = encoded.readShortString()
+  result = newBasicReturn(replyCode, replyText, exchange, routingKey)
 
-method decode*(self: BasicReturn): string =
-  var s = newStringStream("")
-  s.writeBigEndian16(self.replyCode)
-  s.writeShortString(self.replyText)
-  s.writeShortString(self.exchange)
-  s.writeShortString(self.routingKey)
-  result = s.readAll()
-  s.close()
+proc decode*(self: BasicReturn, to: Stream) =
+  to.writeBigEndian16(self.replyCode)
+  to.writeShortString(self.replyText)
+  to.writeShortString(self.exchange)
+  to.writeShortString(self.routingKey)
 
-type BasicDeliver* = ref object of Method
-  consumerTag: string
-  deliveryTag: uint64
-  redelivered: bool
-  exchange: string
-  routingKey: string
+#--------------- Basic.Deliver ---------------#
 
 proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, exchange="", routingKey=""): BasicDeliver =
   result.new
@@ -235,30 +258,24 @@ proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, e
   result.exchange = exchange
   result.routingKey = routingKey
 
-method decode*(self: BasicDeliver, encoded: Stream): BasicDeliver =
-  self.consumerTag = encoded.readShortString()
-  self.deliveryTag = encoded.readBigEndianU64()
+proc decode*(_: type[BasicDeliver], encoded: Stream): BasicDeliver =
+  let consumerTag = encoded.readShortString()
+  let deliveryTag = encoded.readBigEndianU64()
   let bbuf = encoded.readBigEndianU8()
-  self.redelivered = (bbuf and 0x01) != 0
-  self.exchange = encoded.readShortString()
-  self.routingKey = encoded.readShortString()
-  return self
+  let redelivered = (bbuf and 0x01) != 0
+  let exchange = encoded.readShortString()
+  let routingKey = encoded.readShortString()
+  result = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
 
-method encode*(self: BasicDeliver): string =
-  var s = newStringStream("")
-  s.writeShortString(self.consumerTag)
-  s.writeBigEndian64(self.deliveryTag)
+proc encode*(self: BasicDeliver, to: Stream) =
+  to.writeShortString(self.consumerTag)
+  to.writeBigEndian64(self.deliveryTag)
   let bbuf = (if self.redelivered: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  s.writeShortString(self.exchange)
-  s.writeShortString(self.routingKey)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
+  to.writeShortString(self.exchange)
+  to.writeShortString(self.routingKey)
 
-type BasicGet* = ref object of Method
-  ticket: uint16
-  queue: string
-  noAck: bool
+#--------------- Basic.Get ---------------#
 
 proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): BasicGet =
   result.new
@@ -267,28 +284,20 @@ proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): BasicGet =
   result.queue = queue
   result.noAck = noAck
 
-method decode*(self: BasicGet, encoded: Stream): BasicGet =
-  self.ticket = encoded.readBigEndianU16()
-  self.queue = encoded.readShortString()
+proc decode*(_: type[BasicGet], encoded: Stream): BasicGet =
+  let ticket = encoded.readBigEndianU16()
+  let queue = encoded.readShortString()
   let bbuf = encoded.readBigEndianU8()
-  self.noAck = (bbuf and 0x01) != 0
-  return self
+  let noAck = (bbuf and 0x01) != 0
+  result = newBasicGet(ticket, queue, noAck)
 
-method encode*(self: BasicGet): string =
-  var s = newStringStream("")
-  s.writeBigEndian16(self.ticket)
-  s.writeShortString(self.queue)
+proc encode*(self: BasicGet, to: Stream) =
+  to.writeBigEndian16(self.ticket)
+  to.writeShortString(self.queue)
   let bbuf = (if self.noAck: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicGetOk* = ref object of Method
-  deliveryTag: uint64
-  redelivered: bool
-  exchange: string
-  routingKey: string
-  messageCount: uint32
+#--------------- Basic.GetOk ---------------#
 
 proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routingKey="", messageCount=0.uint32): BasicGetOk =
   result.new
@@ -299,47 +308,38 @@ proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routin
   result.routingKey = routingKey
   result.messageCount = messageCount
 
-method decode*(self: BasicGetOk, encoded: Stream): BasicGetOk =
-  self.deliveryTag = encoded.readBigEndianU64()
+proc decode*(_: type[BasicGetOk], encoded: Stream): BasicGetOk =
+  let deliveryTag = encoded.readBigEndianU64()
   let bbuf = encoded.readBigEndianU8()
-  self.redelivered = (bbuf and 0x01) != 0
-  self.exchange = encoded.readShortString()
-  self.routingKey = encoded.readShortString()
-  self.messageCount = encoded.readBigEndianU32()
-  return self
+  let redelivered = (bbuf and 0x01) != 0
+  let exchange = encoded.readShortString()
+  let routingKey = encoded.readShortString()
+  let messageCount = encoded.readBigEndianU32()
+  result = newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
 
-method encode*(self: BasicGetOk): string =
-  var s = newStringStream("")
-  s.writeBigEndian64(self.deliveryTag)
+proc encode*(self: BasicGetOk, to: Stream) =
+  to.writeBigEndian64(self.deliveryTag)
   let bbuf = (if self.redelivered: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  s.writeShortString(self.exchange)
-  s.writeShortString(self.routingKey)
-  s.writeBigEndian32(self.messageCount)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
+  to.writeShortString(self.exchange)
+  to.writeShortString(self.routingKey)
+  to.writeBigEndian32(self.messageCount)
 
-type BasicGetEmpty* = ref object of Method
-  clusterId: string
+#--------------- Basic.GetEmpty ---------------#
 
 proc newBasicGetEmpty*(clusterId=""): BasicGetEmpty =
   result.new
   result.initMethod(false, 0x003C0048)
   result.clusterId = clusterId
 
-method decode*(self: BasicGetEmpty, encoded: Stream): BasicGetEmpty =
-  self.clusterId = encoded.readShortString()
-  return self
+proc decode*(_: type[BasicGetEmpty], encoded: Stream): BasicGetEmpty =
+  let clusterId = encoded.readShortString()
+  result = newBasicGetEmpty(clusterId)
 
-method encode*(self: BasicGetEmpty): string =
-  var s = newStringStream("")
-  s.writeShortString(self.clusterId)
-  result = s.readAll()
-  s.close()
+proc encode*(self: BasicGetEmpty, to: Stream) =
+  to.writeShortString(self.clusterId)
 
-type BasicAck* = ref object of Method
-  deliveryTag: uint64
-  multiple: bool
+#--------------- Basic.Ack ---------------#
 
 proc newBasicAck*(deliveryTag=0.uint64, multiple=false): BasicAck =
   result.new
@@ -347,23 +347,18 @@ proc newBasicAck*(deliveryTag=0.uint64, multiple=false): BasicAck =
   result.deliveryTag = deliveryTag
   result.multiple = multiple
 
-method decode*(self: BasicAck, encoded: Stream): BasicAck =
-  self.deliveryTag = encoded.readBigEndianU64()
+proc decode*(_: type[BasicAck], encoded: Stream): BasicAck =
+  let deliveryTag = encoded.readBigEndianU64()
   let bbuf = encoded.readBigEndianU8()
-  self.multiple = (bbuf and 0x01) != 0
-  return self
+  let multiple = (bbuf and 0x01) != 0
+  result = newBasicAck(deliveryTag, multiple)
 
-method encode*(self: BasicAck): string =
-  var s = newStringStream("")
-  s.writeBigEndian64(self.deliveryTag)
+proc encode*(self: BasicAck, to: Stream) =
+  to.writeBigEndian64(self.deliveryTag)
   let bbuf = (if self.multiple: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicReject* = ref object of Method
-  deliveryTag: uint64
-  requeue: bool
+#--------------- Basic.Reject ---------------#
 
 proc newBasicReject*(deliveryTag=0.uint64, requeue=false): BasicReject =
   result.new
@@ -371,70 +366,60 @@ proc newBasicReject*(deliveryTag=0.uint64, requeue=false): BasicReject =
   result.deliveryTag = deliveryTag
   result.requeue = requeue
 
-method decode*(self: BasicReject, encoded: Stream): BasicReject =
-  self.deliveryTag = encoded.readBigEndianU64()
+proc decode*(_: type[BasicReject], encoded: Stream): BasicReject =
+  let deliveryTag = encoded.readBigEndianU64()
   let bbuf = encoded.readBigEndianU8()
-  self.requeue = (bbuf and 0x01) != 0
-  return self
+  let requeue = (bbuf and 0x01) != 0
+  result = newBasicReject(deliveryTag, requeue)
 
-method encode*(self: BasicReject): string =
-  var s = newStringStream("")
-  s.writeBigEndian64(self.deliveryTag)
+proc encode*(self: BasicReject, to: Stream) =
+  to.writeBigEndian64(self.deliveryTag)
   let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicRecoverAsync* = ref object of Method
-  requeue: bool
+#--------------- Basic.RecoverAsync ---------------#
 
 proc newBasicRecoverAsync*(requeue=false): BasicRecoverAsync =
   result.new
   result.initMethod(false, 0x003C0064)
   result.requeue = requeue
 
-method decode*(self: BasicRecoverAsync, encoded: Stream): BasicRecoverAsync =
+proc decode*(_: type[BasicRecoverAsync], encoded: Stream): BasicRecoverAsync =
   let bbuf = encoded.readBigEndianU8()
-  self.requeue = (bbuf and 0x01) != 0
-  return self
+  let requeue = (bbuf and 0x01) != 0
+  result = newBasicRecoverAsync(requeue)
 
-method encode*(self: BasicRecoverAsync): string =
-  var s = newStringStream("")
+proc encode*(self: BasicRecoverAsync, to: Stream) =
   let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicRecover* = ref object of Method
-  requeue: bool
+#--------------- Basic.Recover ---------------#
 
 proc newBasicRecover*(requeue=false): BasicRecover =
   result.new
   result.initMethod(true, 0x003C006E)
   result.requeue = requeue
 
-method decode*(self: BasicRecover, encoded: Stream): BasicRecover =
+proc decode*(_: type[BasicRecover], encoded: Stream): BasicRecover =
   let bbuf = encoded.readBigEndianU8()
-  self.requeue = (bbuf and 0x01) != 0
-  return self
+  let requeue = (bbuf and 0x01) != 0
+  result = newBasicRecover(requeue)
 
-method encode*(self: BasicRecover): string =
-  var s = newStringStream("")
+proc encode*(self: BasicRecover, to: Stream) =
   let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)
 
-type BasicRecoverOk* = ref object of Method
+#--------------- Basic.RecoverOk ---------------#
 
 proc newBasicRecoverOk*(): BasicRecoverOk =
   result.new
   result.initMethod(false, 0x003C006F)
 
-type BasicNack* = ref object of Method
-  deliveryTag: uint64
-  multiple: bool
-  requeue: bool
+proc decode*(_: type[BasicRecoverOk], encoded: Stream): BasicRecoverOk = newBasicRecoverOk()
+
+proc encode*(self: BasicRecoverOk, to: Stream) = discard
+
+#--------------- Basic.Nack ---------------#
 
 proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): BasicNack =
   result.new
@@ -443,19 +428,16 @@ proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): BasicNa
   result.multiple = multiple
   result.requeue = requeue
 
-method decode*(self: BasicNack, encoded: Stream): BasicNack =
-  self.deliveryTag = encoded.readBigEndianU64()
+proc decode*(_: type[BasicNack], encoded: Stream): BasicNack =
+  let deliveryTag = encoded.readBigEndianU64()
   let bbuf = encoded.readBigEndianU8()
-  self.multiple = (bbuf and 0x01) != 0
-  self.requeue = (bbuf and 0x02) != 0
-  return self
+  let multiple = (bbuf and 0x01) != 0
+  let requeue = (bbuf and 0x02) != 0
+  result = newBasicNack(deliveryTag, multiple, requeue)
 
-method encode*(self: BasicNack): string =
-  var s = newStringStream("")
-  s.writeBigEndian64(self.deliveryTag)
+proc encode*(self: BasicNack, to: Stream) =
+  to.writeBigEndian64(self.deliveryTag)
   let bbuf = 0x00.uint8 or
     (if self.multiple: 0x01.uint8 else: 0x00.uint8) or
     (if self.requeue: 0x02.uint8 else: 0x00.uint8)
-  s.writeBigEndian8(bbuf)
-  result = s.readAll()
-  s.close()
+  to.writeBigEndian8(bbuf)

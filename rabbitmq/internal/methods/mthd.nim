@@ -1,14 +1,10 @@
 import streams
 
 type
-  MethodID = enum
-    idmNone
-
   Method* {.inheritable.} = ref MethodObj
   MethodObj* {.inheritable.} = object
     syncronous: bool
     index: uint32
-    #methodID: MethodID
 
 proc initMethod*(m: Method, syncronous: bool, index: uint32) =
   m.syncronous = syncronous
