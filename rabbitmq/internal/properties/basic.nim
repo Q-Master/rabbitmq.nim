@@ -2,6 +2,7 @@ import options
 import tables
 import times
 import streams
+import ./props
 import ../data
 
 const FLAG_CONTENT_TYPE: uint16 = 0x0001 shl 15
@@ -21,8 +22,7 @@ const FLAG_CLUSTER_ID: uint16 = 0x0001 shl 2
 
 
 type 
-  BasicProperties* = ref BasicPropertiesObj
-  BasicPropertiesObj* = object
+  BasicProperties* = ref object of Properties
     contentType: Option[string]
     contentEncoding: Option[string]
     headers: TableRef[string, DataTable]

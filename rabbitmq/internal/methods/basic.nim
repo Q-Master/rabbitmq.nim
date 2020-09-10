@@ -206,7 +206,7 @@ proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=fal
   result.mandatory = mandatory
   result.immediate = immediate
 
-proc decode*(_: BasicPublish, encoded: Stream): BasicPublish =
+proc decode*(_: type[BasicPublish], encoded: Stream): BasicPublish =
   let ticket = encoded.readBigEndianU16()
   let exchange = encoded.readShortString()
   let routingKey = encoded.readShortString()
@@ -234,14 +234,14 @@ proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey="
   result.exchange = exchange
   result.routingKey = routingKey
 
-proc encode*(_: type[BasicReturn], encoded: Stream): BasicReturn =
+proc decode*(_: type[BasicReturn], encoded: Stream): BasicReturn =
   let replyCode = encoded.readBigEndianU16()
   let replyText = encoded.readShortString()
   let exchange = encoded.readShortString()
   let routingKey = encoded.readShortString()
   result = newBasicReturn(replyCode, replyText, exchange, routingKey)
 
-proc decode*(self: BasicReturn, to: Stream) =
+proc encode*(self: BasicReturn, to: Stream) =
   to.writeBigEndian16(self.replyCode)
   to.writeShortString(self.replyText)
   to.writeShortString(self.exchange)

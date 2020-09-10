@@ -24,7 +24,7 @@ type
     routingKey: string
     noWait: bool
     arguments: TableRef[string, DataTable]
-  QueueuBindOk* = ref object of Method
+  QueueBindOk* = ref object of Method
   QueuePurge* = ref object of Method
     ticket: uint16
     queue: string
@@ -151,13 +151,13 @@ proc encode*(self: QueueBind, to: Stream) =
 
 #--------------- Queue.BindOk ---------------#
 
-proc newQueueBindOk*(): QueueuBindOk =
+proc newQueueBindOk*(): QueueBindOk =
   result.new
   result.initMethod(false, 0x00320015)
 
-proc decode*(_: type[QueueuBindOk], encoded: Stream): QueueuBindOk = newQueueBindOk()
+proc decode*(_: type[QueueBindOk], encoded: Stream): QueueBindOk = newQueueBindOk()
 
-proc encode*(self: QueueuBindOk, to: Stream) = discard
+proc encode*(self: QueueBindOk, to: Stream) = discard
 
 #--------------- Queue.Purge ---------------#
 

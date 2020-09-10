@@ -3,6 +3,7 @@ import tables
 import ./mthd
 import ../spec
 import ../data
+import ../exceptions
 
 type 
   ConnectionStart* = ref object of Method
@@ -109,7 +110,7 @@ proc encode*(self: ConnectionSecure, to: Stream) =
 
 #--------------- Connection.SecureOk ---------------#
 
-proc newConnectionSecureOk*(response: string = ""): ConnectionStartOk =
+proc newConnectionSecureOk*(response: string = ""): ConnectionSecureOk =
   result.new
   result.initMethod(false, 0x000A0015)
   result.response = response
@@ -219,6 +220,29 @@ proc encode*(self: ConnectionClose, to: Stream) =
   to.writeShortString(self.replyText)
   to.writeBigEndian16(self.classId)
   to.writeBigEndian16(self.methodId)
+
+proc checkCloseReason*(self: ConnectionClose) =
+  case self.replyCode
+  of 501:
+    raise newException(ConnectionFrameError, self.replyText)
+  of 502:
+    raise newException(ConnectionSyntaxError, self.replyText)
+  of 503:
+    raise newException(ConnectionCommandInvalid, self.replyText)
+  of 504:
+    raise newException(ConnectionChannelError, self.replyText)
+  of 505:
+    raise newException(ConnectionUnexpectedFrame, self.replyText)
+  of 506:
+    raise newException(ConnectionResourceError, self.replyText)
+  of 530:
+    raise newException(ConnectionNotAllowed, self.replyText)
+  of 540:
+    raise newException(ConnectionNotImplemented, self.replyText)
+  of 541:
+    raise newException(ConnectionInternalError, self.replyText)
+  else:
+    raise newException(ConnectionClosed, self.replyText)
 
 #--------------- Connection.CloseOk ---------------#
 
