@@ -1,4 +1,5 @@
-import streams
+import asyncdispatch
+import faststreams/[inputs, outputs]
 import tables
 import ./mthd
 import ../spec
@@ -56,20 +57,20 @@ proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1
   result.mechanisms = mechanisms
   result.locales = locales
 
-proc decode*(_: type[ConnectionStart], encoded: Stream): ConnectionStart =
-  let major = encoded.readBigEndianU8()
-  let minor = encoded.readBigEndianU8()
-  let properties = decodeTable(encoded)
-  let mechanisms = encoded.readString()
-  let locales = encoded.readString()
+proc decode*(_: type[ConnectionStart], encoded: AsyncInputStream): Future[ConnectionStart] {.async.} =
+  let (_, major) = await encoded.readBigEndianU8()
+  let (_, minor) = await encoded.readBigEndianU8()
+  let (_, properties) = await decodeTable(encoded)
+  let (_, mechanisms) = await encoded.readString()
+  let (_, locales) = await encoded.readString()
   result = newConnectionStart(major, minor, properties, mechanisms, locales)
 
-proc encode*(self: ConnectionStart, to: Stream) =
-  to.writeBigEndian8(self.major)
-  to.writeBigEndian8(self.minor)
-  to.encodeTable(self.properties)
-  to.writeString(self.mechanisms)
-  to.writeString(self.locales)
+proc encode*(self: ConnectionStart, to: AsyncOutputStream) {.async.} =
+  discard await to.writeBigEndian8(self.major)
+  discard await to.writeBigEndian8(self.minor)
+  discard await to.encodeTable(self.properties)
+  discard await to.writeString(self.mechanisms)
+  discard await to.writeString(self.locales)
 
 #--------------- Connection.StartOk ---------------#
 
@@ -81,18 +82,18 @@ proc newConnectionStartOk*(clientProps: TableRef[string, DataTable] = nil, mecha
   result.response = response
   result.locale = locales
 
-proc decode*(_: type[ConnectionStartOk], encoded: Stream): ConnectionStartOk =
-  let clientProps = decodeTable(encoded)
-  let mechanism = encoded.readShortString()
-  let response = encoded.readString()
-  let locale = encoded.readShortString()
+proc decode*(_: type[ConnectionStartOk], encoded: AsyncInputStream): Future[ConnectionStartOk] {.async.} =
+  let (_, clientProps) = await decodeTable(encoded)
+  let (_, mechanism) = await encoded.readShortString()
+  let (_, response) = await encoded.readString()
+  let (_, locale) = await encoded.readShortString()
   result = newConnectionStartOk(clientProps, mechanism, response, locale)
 
-proc encode*(self: ConnectionStartOk, to: Stream) =
-  to.encodeTable(self.clientProps)
-  to.writeShortString(self.mechanism)
-  to.writeString(self.response)
-  to.writeShortString(self.locale)
+proc encode*(self: ConnectionStartOk, to: AsyncOutputStream) {.async.} =
+  discard await to.encodeTable(self.clientProps)
+  discard await to.writeShortString(self.mechanism)
+  discard await to.writeString(self.response)
+  discard await to.writeShortString(self.locale)
 
 #--------------- Connection.Secure ---------------#
 
@@ -101,12 +102,12 @@ proc newConnectionSecure*(challenge: string = ""): ConnectionSecure =
   result.initMethod(true, 0x000A0014)
   result.challenge = challenge
 
-proc decode*(_: type[ConnectionSecure], encoded: Stream): ConnectionSecure =
-  let challenge = encoded.readString()
+proc decode*(_: type[ConnectionSecure], encoded: AsyncInputStream): Future[ConnectionSecure] {.async.} =
+  let (_, challenge) = await encoded.readString()
   result = newConnectionSecure(challenge)
 
-proc encode*(self: ConnectionSecure, to: Stream) =
-  to.writeString(self.challenge)
+proc encode*(self: ConnectionSecure, to: AsyncOutputStream) {.async.} =
+  discard await to.writeString(self.challenge)
 
 #--------------- Connection.SecureOk ---------------#
 
@@ -115,12 +116,12 @@ proc newConnectionSecureOk*(response: string = ""): ConnectionSecureOk =
   result.initMethod(false, 0x000A0015)
   result.response = response
 
-proc decode*(_: type[ConnectionSecureOk], encoded: Stream): ConnectionSecureOk =
-  let response = encoded.readString()
+proc decode*(_: type[ConnectionSecureOk], encoded: AsyncInputStream): Future[ConnectionSecureOk] {.async.} =
+  let (_, response) = await encoded.readString()
   result = newConnectionSecureOk(response)
 
-proc encode*(self: ConnectionSecureOk, to: Stream) =
-  to.writeString(self.response)
+proc encode*(self: ConnectionSecureOk, to: AsyncOutputStream) {.async.} =
+  discard await to.writeString(self.response)
 
 #--------------- Connection.Tune ---------------#
 
@@ -131,16 +132,16 @@ proc newConnectionTune*(channelMax: uint16 = 0, frameMax: uint32 = 0, heartbeat:
   result.frameMax = frameMax
   result.heartbeat = heartbeat
 
-proc decode*(_: type[ConnectionTune], encoded: Stream): ConnectionTune =
-  let channelMax = encoded.readBigEndianU16()
-  let frameMax = encoded.readBigEndianU32()
-  let heartbeat = encoded.readBigEndianU16()
+proc decode*(_: type[ConnectionTune], encoded: AsyncInputStream): Future[ConnectionTune] {.async.} =
+  let (_, channelMax) = await encoded.readBigEndianU16()
+  let (_, frameMax) = await encoded.readBigEndianU32()
+  let (_, heartbeat) = await encoded.readBigEndianU16()
   result = newConnectionTune(channelMax, frameMax, heartbeat)
 
-proc encode*(self: ConnectionTune, to: Stream) =
-  to.writeBigEndian16(self.channelMax)
-  to.writeBigEndian32(self.frameMax)
-  to.writeBigEndian16(self.heartbeat)
+proc encode*(self: ConnectionTune, to: AsyncOutputStream) {.async.} =
+  discard await to.writeBigEndian16(self.channelMax)
+  discard await to.writeBigEndian32(self.frameMax)
+  discard await to.writeBigEndian16(self.heartbeat)
 
 #--------------- Connection.TuneOk ---------------#
 
@@ -151,16 +152,16 @@ proc newConnectionTuneOk*(channelMax: uint16 = 0, frameMax: uint32 = 0, heartbea
   result.frameMax = frameMax
   result.heartbeat = heartbeat
 
-proc decode*(_: type[ConnectionTuneOk], encoded: Stream): ConnectionTuneOk =
-  let channelMax = encoded.readBigEndianU16()
-  let frameMax = encoded.readBigEndianU32()
-  let heartbeat = encoded.readBigEndianU16()
+proc decode*(_: type[ConnectionTuneOk], encoded: AsyncInputStream): Future[ConnectionTuneOk] {.async.} =
+  let (_, channelMax) = await encoded.readBigEndianU16()
+  let (_, frameMax) = await encoded.readBigEndianU32()
+  let (_, heartbeat) = await encoded.readBigEndianU16()
   result = newConnectionTuneOk(channelMax, frameMax, heartbeat)
 
-proc encode*(self: ConnectionTuneOk, to: Stream) =
-  to.writeBigEndian16(self.channelMax)
-  to.writeBigEndian32(self.frameMax)
-  to.writeBigEndian16(self.heartbeat)
+proc encode*(self: ConnectionTuneOk, to: AsyncOutputStream) {.async.} =
+  discard await to.writeBigEndian16(self.channelMax)
+  discard await to.writeBigEndian32(self.frameMax)
+  discard await to.writeBigEndian16(self.heartbeat)
 
 #--------------- Connection.Open ---------------#
 
@@ -171,18 +172,18 @@ proc newConnectionOpen*(virtualHost = "/", capabilities = "", insist = false): C
   result.capabilities = capabilities
   result.insist = insist
 
-proc decode*(_: type[ConnectionOpen], encoded: Stream): ConnectionOpen =
-  let virtualHost = encoded.readShortString()
-  let capabilities = encoded.readShortString()
-  let bbuf = encoded.readUint8()
+proc decode*(_: type[ConnectionOpen], encoded: AsyncInputStream): Future[ConnectionOpen] {.async.} =
+  let (_, virtualHost) = await encoded.readShortString()
+  let (_, capabilities) = await encoded.readShortString()
+  let (_, bbuf) = await encoded.readUint8()
   let insist = (bbuf and 0x01) != 0
   result = newConnectionOpen(virtualHost, capabilities, insist)
 
-proc encode*(self: ConnectionOpen, to: Stream) =
-  to.writeShortString(self.virtualHost)
-  to.writeShortString(self.capabilities)
+proc encode*(self: ConnectionOpen, to: AsyncOutputStream) {.async.} =
   let bbuf: uint8 = (if self.insist: 0x01 else: 0x00)
-  to.writeBigEndian8(bbuf)
+  discard await to.writeShortString(self.virtualHost)
+  discard await to.writeShortString(self.capabilities)
+  discard await to.writeBigEndian8(bbuf)
 
 #--------------- Connection.OpenOk ---------------#
 
@@ -191,12 +192,12 @@ proc newConnectionOpenOk*(knownHosts = ""): ConnectionOpenOk =
   result.initMethod(false, 0x000A0029)
   result.knownHosts = knownHosts
 
-proc decode*(_: type[ConnectionOpenOk], encoded: Stream): ConnectionOpenOk =
-  let knownHosts = encoded.readShortString()
+proc decode*(_: type[ConnectionOpenOk], encoded: AsyncInputStream): Future[ConnectionOpenOk] {.async.} =
+  let (_, knownHosts) = await encoded.readShortString()
   result = newConnectionOpenOk(knownHosts)
 
-proc encode*(self: ConnectionOpenOk, to: Stream) =
-  to.writeShortString(self.knownHosts)
+proc encode*(self: ConnectionOpenOk, to: AsyncOutputStream) {.async.} =
+  discard await to.writeShortString(self.knownHosts)
 
 #--------------- Connection.Close ---------------#
 
@@ -208,18 +209,18 @@ proc newConnectionClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 
   result.classId = classId
   result.methodId = methodId
 
-proc decode*(_: type[ConnectionClose], encoded: Stream): ConnectionClose =
-  let replyCode = encoded.readBigEndianU16()
-  let replyText = encoded.readShortString()
-  let classId = encoded.readUint16()
-  let methodId = encoded.readUint16()
+proc decode*(_: type[ConnectionClose], encoded: AsyncInputStream): Future[ConnectionClose] {.async.} =
+  let (_, replyCode) = await encoded.readBigEndianU16()
+  let (_, replyText) = await encoded.readShortString()
+  let (_, classId) = await encoded.readUint16()
+  let (_, methodId) = await encoded.readUint16()
   result = newConnectionClose(replyCode, replyText, classId, methodId)
 
-proc encode*(self: ConnectionClose, to: Stream) =
-  to.writeBigEndian16(self.replyCode)
-  to.writeShortString(self.replyText)
-  to.writeBigEndian16(self.classId)
-  to.writeBigEndian16(self.methodId)
+proc encode*(self: ConnectionClose, to: AsyncOutputStream) {.async.} =
+  discard await to.writeBigEndian16(self.replyCode)
+  discard await to.writeShortString(self.replyText)
+  discard await to.writeBigEndian16(self.classId)
+  discard await to.writeBigEndian16(self.methodId)
 
 proc checkCloseReason*(self: ConnectionClose) =
   case self.replyCode
@@ -250,9 +251,9 @@ proc newConnectionCloseOk*(): ConnectionCloseOk =
   result.new
   result.initMethod(false, 0x000A0033)
 
-proc decode*(_: type[ConnectionCloseOk], encoded: Stream): ConnectionCloseOk = newConnectionCloseOk()
+proc decode*(_: type[ConnectionCloseOk], encoded: AsyncInputStream): Future[ConnectionCloseOk] {.async.} = newConnectionCloseOk()
 
-proc encode*(self: ConnectionCloseOk, to: Stream) = discard
+proc encode*(self: ConnectionCloseOk, to: AsyncOutputStream) {.async.} = discard
 
 #--------------- Connection.Blocked ---------------#
 
@@ -261,12 +262,12 @@ proc newConnectionBlocked*(reason = ""): ConnectionBlocked =
   result.initMethod(false, 0x000A003C)
   result.reason = reason
 
-proc decode*(_: type[ConnectionBlocked], encoded: Stream): ConnectionBlocked =
-  let reason = encoded.readShortString()
+proc decode*(_: type[ConnectionBlocked], encoded: AsyncInputStream): Future[ConnectionBlocked] {.async.} =
+  let (_, reason) = await encoded.readShortString()
   result = newConnectionBlocked(reason)
 
-proc encode*(self: ConnectionBlocked, to: Stream) =
-  to.writeShortString(self.reason)
+proc encode*(self: ConnectionBlocked, to: AsyncOutputStream) {.async.} =
+  discard await to.writeShortString(self.reason)
 
 #--------------- Connection.Unblocked ---------------#
 
@@ -274,6 +275,6 @@ proc newConnectionUnblocked*(): ConnectionUnblocked =
   result.new
   result.initMethod(false, 0x000A003D)
 
-proc decode*(_: type[ConnectionUnblocked], encoded: Stream): ConnectionUnblocked = newConnectionUnblocked()
+proc decode*(_: type[ConnectionUnblocked], encoded: AsyncInputStream): Future[ConnectionUnblocked] {.async.} = newConnectionUnblocked()
 
-proc encode*(self: ConnectionUnblocked, to: Stream) = discard
+proc encode*(self: ConnectionUnblocked, to: AsyncOutputStream) {.async.} = discard

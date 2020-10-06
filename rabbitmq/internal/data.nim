@@ -2,7 +2,10 @@ import streams
 import endians
 import times
 import tables
+import faststreams/[inputs, outputs]
 import ./exceptions
+import ./async_socket_adapters
+import ./spec
 
 type
   Decimal = string
@@ -67,230 +70,312 @@ type
     of dtVoid:
       discard
     
-proc readBigEndian8*(s: Stream): int8 =
-  result = s.readInt8
+const sizeInt8Uint8 = sizeof(int8)
+proc readBigEndian8*(s: AsyncInputStream): Future[(int, int8)] {.async.} =
+  var res: int8 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt8Uint8)
+  result = (sizeInt8Uint8, res)
 
-proc readBigEndianU8*(s: Stream): uint8 =
-  result = s.readUint8
+proc readBigEndianU8*(s: AsyncInputStream): Future[(int, uint8)] {.async.} =
+  var res: uint8 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt8Uint8)
+  result = (sizeInt8Uint8,res)
 
-proc readBigEndian16*(s: Stream): int16 =
-  result = s.readInt16
+const sizeInt16Uint16 = sizeof(int16)
+proc readBigEndian16*(s: AsyncInputStream): Future[(int, int16)] {.async.} =
+  var res: int16 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt16Uint16)
+  result = (sizeInt16Uint16, res)
   bigEndian16(addr result, addr result)
 
-proc readBigEndianU16*(s: Stream): uint16 =
-  result = s.readUInt16
+proc readBigEndianU16*(s: AsyncInputStream): Future[(int, uint16)] {.async.} =
+  var res: uint16 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt16Uint16)
+  result = (sizeInt16Uint16, res)
   bigEndian16(addr result, addr result)
 
-proc readBigEndian32*(s: Stream): int32 =
-  result = s.readInt32
+const sizeInt32Uint32 = sizeof(int32)
+proc readBigEndian32*(s: AsyncInputStream): Future[(int, int32)] {.async.} =
+  var res: int32 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt32Uint32)
+  result = (sizeInt32Uint32, res)
   bigEndian32(addr result, addr result)
 
-proc readBigEndianU32*(s: Stream): uint32 =
-  result = s.readUInt32
+proc readBigEndianU32*(s: AsyncInputStream): Future[(int, uint32)] {.async.} =
+  var res: uint32 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt32Uint32)
+  result = (sizeInt32Uint32, res)
   bigEndian32(addr result, addr result)
 
-proc readBigEndian64*(s: Stream): int64 =
-  result = s.readInt64
+const sizeInt64Uint64 = sizeof(int64)
+proc readBigEndian64*(s: AsyncInputStream): Future[(int, int64)] {.async.} =
+  var res: int64 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt64Uint64)
+  result = (sizeInt64Uint64, res)
   bigEndian64(addr result, addr result)
 
-proc readBigEndianU64*(s: Stream): uint64 =
-  result = s.readUInt64
+proc readBigEndianU64*(s: AsyncInputStream): Future[(int, uint64)] {.async.} =
+  var res: uint64 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeInt64Uint64)
+  result = (sizeInt64Uint64, res)
   bigEndian64(addr result, addr result)
 
-proc readShortString*(s: Stream): string =
-  let length = s.readBigEndian8()
-  return s.readStr(length)
+const sizeFloat32 = sizeof(float32)
+proc readBigEndianFloat32*(s: AsyncInputStream): Future[(int, float32)] {.async.} =
+  var res: float32 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeFloat32)
+  result = (sizeFloat32, res)
+  #bigEndian32(addr result, addr result)
 
-proc readString*(s: Stream): string =
-  let length = s.readBigEndianU32().int
-  return s.readStr(length)
+const sizeFloat64 = sizeof(float64)
+proc readBigEndianFloat64*(s: AsyncInputStream): Future[(int, float64)] {.async.} =
+  var res: float64 = 0
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr res), sizeFloat64)
+  result = (sizeFloat64, res)
+  #bigEndian64(addr result, addr result)
 
-proc writeBigEndian8*(s: Stream, x: int8 | uint8): Stream {.discardable.} =
-  s.write(x)
+proc readShortString*(s: AsyncInputStream): Future[(int, string)] {.async.} =
+  let length: int = s.read().int
+  var str = newStringOfCap(length)
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr str), length)
+  str.setLen(length)
+  result = (length, str)
+
+proc readString*(s: AsyncInputStream): Future[(int, string)] {.async.} =
+  let (size, length) = await s.readBigEndianU32()
+  var str = newStringOfCap(length)
+  discard await s.asyncReadIntoEx(cast[ptr byte](addr str), length)
+  str.setLen(length.int)
+  result = (length.int+size, str)
+
+proc decodeValue(s: AsyncInputStream): Future[(int, DataTable)] {.async.}
+proc readArray*(s: AsyncInputStream): Future[(int, seq[DataTable])] {.async.} =
+  var arr: seq[DataTable] = @[]
+  let (size, length) = await s.readBigEndianU32()
+  var cnt = 0
+  while cnt < length.int:
+    let (sz, val) = await s.decodeValue()
+    cnt += sz
+    arr.add(val)
+  result = (size+length.int, arr)
+
+proc decodeTable*(s: AsyncInputStream): Future[(int, TableRef[string, DataTable])] {.async.} =
+  var res = newTable[string, DataTable]()
+  let (size, tableSize) = await s.readBigEndian32()
+  var off = 0.int
+  while off < tableSize:
+    let (ssize, key) = await s.readShortString()
+    let (vsize, value) = await s.decodeValue()
+    res[key] = value
+    off = off + ssize + vsize
+  result = (off+size, res)
+
+proc decodeValue(s: AsyncInputStream): Future[(int, DataTable)] {.async.} =
+  var (size, kind) = await s.readBigEndian8()
+  case kind.char
+  of 't':
+    let (sz, bval) = await s.readBigEndianU8()
+    size += sz
+    result = (size, DataTable(dtype: dtBool, boolVal: bval.bool))
+  of 'b':
+    let (sz, byteVal) = await s.readBigEndian8()
+    size += sz
+    result = (size, DataTable(dtype: dtByte, byteVal: byteVal))
+  of 'B':
+    let (sz, uByteVal) = await s.readBigEndianU8()
+    size += sz
+    result = (size, DataTable(dtype: dtUByte, uByteVal: uByteVal))
+  of 'U':
+    let (sz, shortVal) = await s.readBigEndian16()
+    size += sz
+    result = (size, DataTable(dtype: dtShort, shortVal: shortVal))
+  of 'u':
+    let (sz, uShortVal) = await s.readBigEndianU16()
+    size += sz
+    result = (size, DataTable(dtype: dtUShort, uShortVal: uShortVal))
+  of 'I':
+    let (sz, intVal) = await s.readBigEndian32()
+    size += sz
+    result = (size, DataTable(dtype: dtInt, intVal: intVal))
+  of 'i':
+    let (sz, uIntVal) = await s.readBigEndianU32()
+    size += sz
+    result = (size, DataTable(dtype: dtUInt, uIntVal: uIntVal))
+  of 'L':
+    let (sz, longVal) = await s.readBigEndian64()
+    size += sz
+    result = (size, DataTable(dtype: dtLong, longVal: longVal))
+  of 'l':
+    let (sz, uLongVal) = await s.readBigEndianU64()
+    size += sz
+    result = (size, DataTable(dtype: dtULong, uLongVal: uLongVal))
+  of 'f':
+    #TODO Need to investigate endiannes
+    let (sz, floatVal) = await s.readBigEndianFloat32()
+    size += sz
+    result = (size, DataTable(dtype: dtFloat, floatVal: floatVal))
+  of 'd':
+    #TODO Need to investigate endiannes
+    let (sz, doubleVal) = await s.readBigEndianFloat64()
+    size += sz
+    result = (size, DataTable(dtype: dtDouble, doubleVal: doubleVal))
+  of 'D':
+    var decimalVal = newStringOfCap(DECIMAL_VAL_LENGTH)
+    discard await s.asyncReadIntoEx(cast[ptr byte](addr decimalVal), DECIMAL_VAL_LENGTH)
+    size += DECIMAL_VAL_LENGTH
+    result = (size, DataTable(dtype: dtDecimal, decimalVal: decimalVal))
+  of 's':
+    let (sz, shortVal) = await s.readBigEndian16()
+    size += sz
+    result = (size, DataTable(dtype: dtSignedShort, shortVal: shortVal))
+  of 'S':
+    let (sz, stringVal) = await s.readString()
+    size += sz
+    result = (size, DataTable(dtype: dtString, stringVal: stringVal))
+  of 'x':
+    let res = DataTable(dtype: dtBytes)
+    let (sz, length) = await s.readBigEndianU32()
+    res.bytesVal.setLen(length)
+    discard await s.asyncReadIntoEx(cast[ptr byte](addr res.bytesVal[0]), length)
+    result = (size+sz+length.int, res)
+  of 'A':
+    let (sz, arrayVal)= await s.readArray()
+    size += sz
+    result = (size, DataTable(dtype: dtArray, arrayVal: arrayVal))
+  of 'T':
+    let (sz, ts) = await s.readBigEndian64()
+    size += sz
+    result = (size, DataTable(dtype: dtTimestamp, tsVal: fromUnix(ts)))
+  of 'F':
+    let (sz, tableVal) = await s.decodeTable()
+    size += sz
+    result = (size, DataTable(dtype: dtTable, tableVal: tableVal))
+  of 'V':
+    result = (size, DataTable(dtype: dtVoid))
+  else:
+    raise newException(InvalidFieldTypeException, "Unknown field type: " & $kind)
+
+proc writeBigEndian8*(s: AsyncOutputStream, x: int8 | uint8): Future[AsyncOutputStream] {.discardable, async.} =
+  await s.asyncWriteBytes(cast[ptr byte](unsafeAddr x), sizeInt8Uint8)
   result = s
 
-proc writeBigEndian16*(s: Stream, x: int16 | uint16): Stream {.discardable.} =
+proc writeBigEndian16*(s: AsyncOutputStream, x: int16 | uint16): Future[AsyncOutputStream] {.discardable, async.} =
   var n = x
   bigEndian16(addr n, addr n)
-  s.write(n)
+  await s.asyncWriteBytes(cast[ptr byte](addr n), sizeInt16Uint16)
   result = s
 
-proc writeBigEndian32*(s: Stream, x: int32 | uint32): Stream {.discardable.} =
+proc writeBigEndian32*(s: AsyncOutputStream, x: int32 | uint32): Future[AsyncOutputStream] {.discardable, async.} =
   var n = x
   bigEndian32(addr n, addr n)
-  s.write(n)
+  await s.asyncWriteBytes(cast[ptr byte](addr n), sizeInt32Uint32)
   result = s
 
-proc writeBigEndian64*(s: Stream, x: int64 | uint64): Stream {.discardable.} =
+proc writeBigEndian64*(s: AsyncOutputStream, x: int64 | uint64): Future[AsyncOutputStream] {.discardable, async.} =
   var n = x
   bigEndian64(addr n, addr n)
-  s.write(n)
+  await s.asyncWriteBytes(cast[ptr byte](addr n), sizeInt64Uint64)
   result = s
 
-proc writeShortString*(s: Stream, str: string): Stream {.discardable.} =
+proc writeFloat32*(s: AsyncOutputStream, x: float32): Future[AsyncOutputStream] {.discardable, async.} =
+  var n = x
+  #TODO Need to investigate endiannes
+  #bigEndian32(addr n, addr n)
+  await s.asyncWriteBytes(cast[ptr byte](addr n), sizeFloat32)
+  result = s
+
+proc writeFloat64*(s: AsyncOutputStream, x: float64): Future[AsyncOutputStream] {.discardable, async.} =
+  var n = x
+  #TODO Need to investigate endiannes
+  #bigEndian64(addr n, addr n)
+  await s.asyncWriteBytes(cast[ptr byte](addr n), sizeFloat64)
+  result = s
+
+proc writeShortString*(s: AsyncOutputStream, str: string): Future[AsyncOutputStream] {.discardable, async.} =
   let slen = str.len()
   if slen > int8.high():
     raise newException(ValueError, "Wrong string size.")
   s.writeBigEndian8(slen.int8)
-  s.write(str)
+  await s.asyncWriteBytes(cast[ptr byte](unsafeAddr s), slen)
   result = s
 
-proc writeString*(s: Stream, str: string): Stream {.discardable.} =
-  s.writeBigEndian32(str.len().uint32)
-  s.write(str)
+proc writeString*(s: AsyncOutputStream, str: string): Future[AsyncOutputStream] {.discardable, async.} =
+  let slen = str.len()
+  s.writeBigEndian32(slen.uint32)
+  await s.asyncWriteBytes(cast[ptr byte](unsafeAddr s), slen)
   result = s
 
-proc decodeValue(s: Stream): DataTable
-proc decodeTable*(s: Stream): TableRef[string, DataTable] =
-  result = newTable[string, DataTable]()
-  let offset = s.getPosition()
-  let tableSize = readBigEndian32(s)
-  while s.getPosition() < offset+tableSize:
-    let key = s.readShortString()
-    let value = s.decodeValue()
-    result[key] = value
+proc encodeValue(s: AsyncOutputStream, data: DataTable) {.async.}
+proc writeArray*(s: AsyncOutputStream, arr: seq[DataTable]): Future[AsyncOutputStream] {.discardable, async.} =
+  let tmpStream = memoryOutput()
+  let asyncTmpStream = AsyncOutputStream(tmpStream.s)
+  for a in arr:
+    await asyncTmpStream.encodeValue(a)
+  let output: seq[byte] = asyncTmpStream.getOutput()
+  discard await s.writeBigEndian32(output.len.uint32)
+  await s.asyncWriteBytes(cast[ptr byte](unsafeAddr output[0]), output.len)
 
-proc decodeValue(s: Stream): DataTable =
-  let kind = s.readChar()
-  case kind
-  of 't':
-    result = DataTable(dtype: dtBool)
-    result.boolVal = s.readBigEndianU8().bool
-  of 'b':
-    result = DataTable(dtype: dtByte)
-    result.byteVal = s.readBigEndian8()
-  of 'B':
-    result = DataTable(dtype: dtUByte)
-    result.uByteVal = s.readBigEndianU8()
-  of 'U':
-    result = DataTable(dtype: dtShort)
-    result.shortVal = s.readBigEndian16()
-  of 'u':
-    result = DataTable(dtype: dtUShort)
-    result.uShortVal = s.readBigEndianU16()
-  of 'I':
-    result = DataTable(dtype: dtInt)
-    result.intVal = s.readBigEndian32()
-  of 'i':
-    result = DataTable(dtype: dtUInt)
-    result.uIntVal = s.readBigEndianU32()
-  of 'L':
-    result = DataTable(dtype: dtLong)
-    result.longVal = s.readBigEndian64()
-  of 'l':
-    result = DataTable(dtype: dtULong)
-    result.uLongVal = s.readBigEndianU64()  
-  of 'f':
-    result = DataTable(dtype: dtFloat)
-    #TODO Need to investigate endiannes
-    result.floatVal = s.readFloat32()
-  of 'd':
-    result = DataTable(dtype: dtDouble)
-    #TODO Need to investigate endiannes
-    result.doubleVal = s.readFloat64()
-  of 'D':
-    result = DataTable(dtype: dtDecimal)
-    result.decimalVal = s.readStr(5)
-  of 's':
-    result = DataTable(dtype: dtSignedShort)
-    result.shortVal = s.readBigEndian16()
-  of 'S':
-    result = DataTable(dtype: dtString)
-    let length = s.readBigEndianU32().int
-    result.stringVal = s.readStr(length)
-  of 'x':
-    result = DataTable(dtype: dtBytes)
-    var length = s.readBigEndianU32().int
-    while length > 0:
-      result.bytesVal.add(s.readBigEndian8())
-      length -= 1
-  of 'A':
-    result = DataTable(dtype: dtArray)
-    let length = s.readBigEndianU32().int
-    let offset = s.getPosition()
-    result.arrayVal = @[]
-    while s.getPosition() <  offset+length:
-      result.arrayVal.add(s.decodeValue())
-  of 'T':
-    result = DataTable(dtype: dtTimestamp)
-    let ts = s.readBigEndian64()
-    result.tsVal = fromUnix(ts)
-  of 'F':
-    result = DataTable(dtype: dtTable)
-    result.tableVal = decodeTable(s)
-  of 'V':
-    result = DataTable(dtype: dtVoid)
-  else:
-    raise newException(InvalidFieldTypeException, "Unknown field type: " & $kind)
-
-proc encodeValue(s: Stream, data: DataTable)
-proc encodeTable*(s: Stream, data: TableRef[string, DataTable]): Stream {.discardable.} =
+proc encodeTable*(s: AsyncOutputStream, data: TableRef[string, DataTable]): Future[AsyncOutputStream] {.discardable, async.} =
   for k, v in data:
     s.writeShortString(k)
-    s.encodeValue(v)
+    await s.encodeValue(v)
 
-proc encodeValue(s: Stream, data: DataTable) =
+proc encodeValue(s: AsyncOutputStream, data: DataTable) {.async.} =
   case data.dtype
   of dtBool:
-    s.write('t')
-    s.writeBigEndian8(data.boolVal.uint8)
+    discard await s.writeBigEndian8('t'.uint8)
+    discard await s.writeBigEndian8(data.boolVal.uint8)
   of dtByte:
-    s.write('b')
-    s.writeBigEndian8(data.byteVal)
+    discard await s.writeBigEndian8('b'.uint8)
+    discard await s.writeBigEndian8(data.byteVal)
   of dtUByte:
-    s.write('B')
-    s.writeBigEndian8(data.uByteVal)
+    discard await s.writeBigEndian8('B'.uint8)
+    discard await s.writeBigEndian8(data.uByteVal)
   of dtShort:
-    s.write('U')
-    s.writeBigEndian16(data.shortVal)
+    discard await s.writeBigEndian8('U'.uint8)
+    discard await s.writeBigEndian16(data.shortVal)
   of dtUShort:
-    s.write('u')
-    s.writeBigEndian16(data.uShortVal)
+    discard await s.writeBigEndian8('u'.uint8)
+    discard await s.writeBigEndian16(data.uShortVal)
   of dtInt:
-    s.write('I')
-    s.writeBigEndian32(data.intVal)
+    discard await s.writeBigEndian8('I'.uint8)
+    discard await s.writeBigEndian32(data.intVal)
   of dtUInt:
-    s.write('i')
-    s.writeBigEndian32(data.uIntVal)
+    discard await s.writeBigEndian8('i'.uint8)
+    discard await s.writeBigEndian32(data.uIntVal)
   of dtLong:
-    s.write('L')
-    s.writeBigEndian64(data.longVal)
+    discard await s.writeBigEndian8('L'.uint8)
+    discard await s.writeBigEndian64(data.longVal)
   of dtULong:
-    s.write('l')
-    s.writeBigEndian64(data.uLongVal)
+    discard await s.writeBigEndian8('l'.uint8)
+    discard await s.writeBigEndian64(data.uLongVal)
   of dtFloat:
-    s.write('f')
-    #TODO Need to investigate endiannes
-    s.write(data.floatVal)
+    discard await s.writeBigEndian8('f'.uint8)
+    discard await s.writeFloat32(data.floatVal)
   of dtDouble:
-    s.write('d')
-    #TODO Need to investigate endiannes
-    s.write(data.doubleVal)
+    discard await s.writeBigEndian8('d'.uint8)
+    discard await s.writeFloat64(data.doubleVal)
   of dtDecimal:
-    s.write('D')
-    s.write(data.decimalVal)
+    discard await s.writeBigEndian8('D'.uint8)
+    await s.asyncWriteBytes(cast[ptr byte](addr data.decimalVal), DECIMAL_VAL_LENGTH)
   of dtSignedShort:
-    s.write('s')
-    s.writeBigEndian16(data.shortVal)
+    discard await s.writeBigEndian8('s'.uint8)
+    discard await s.writeBigEndian16(data.shortVal)
   of dtString:
-    s.write('S')
-    s.writeBigEndian32(data.stringVal.len.uint32)
-    s.write(data.stringVal)
+    discard await s.writeBigEndian8('S'.uint8)
+    discard await s.writeString(data.stringVal)
   of dtBytes:
-    s.write('x')
-    s.writeBigEndian32(data.bytesVal.len.uint32)
-    for x in data.bytesVal:
-      s.writeBigEndian8(x)
+    discard await s.writeBigEndian8('x'.uint8)
+    discard await s.writeBigEndian32(data.bytesVal.len.uint32)
+    await s.asyncWriteBytes(cast[ptr byte](addr data.bytesVal[0]), data.bytesVal.len)
   of dtArray:
-    s.write('A')
-    s.writeBigEndian32(data.arrayVal.len.uint32)
-    for a in data.arrayVal:
-      s.encodeValue(a)
+    discard await s.writeBigEndian8('A'.uint8)
+    discard await s.writeArray(data.arrayVal)
   of dtTimestamp:
-    s.write('T')
-    s.writeBigEndian64(data.tsVal.toUnix())
+    discard await s.writeBigEndian8('T'.uint8)
+    discard await s.writeBigEndian64(data.tsVal.toUnix())
   of dtTable:
-    s.write('F')
-    s.encodeTable(data.tableVal)    
+    discard await s.writeBigEndian8('F'.uint8)
+    discard await s.encodeTable(data.tableVal)    
   of dtVoid:
-    s.write('V')
+    discard await s.writeBigEndian8('V'.uint8)
