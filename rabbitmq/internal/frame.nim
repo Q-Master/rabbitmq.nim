@@ -1,5 +1,5 @@
-import streams
-import strutils
+import asyncdispatch
+import faststreams/[inputs, outputs]
 import ./spec
 import ./data
 import ./exceptions
@@ -24,7 +24,7 @@ type
       bodySize: uint64
       props: Properties
     of ftBody:
-      fragment: string
+      fragment: seq[byte]
     of ftHeartBeat:
       discard
     of ftProtocolHeader:
@@ -45,7 +45,7 @@ proc newHeader*(channelNum: uint16, bodySize: uint64, props: Properties): Frame 
   result.bodySize = bodySize
   result.props = props
 
-proc newBody*(channelNum: uint16, fragment: string): Frame =
+proc newBody*(channelNum: uint16, fragment: seq[byte]): Frame =
   result.new
   result.frameType = ftBody
   result.channelNum = channelNum
@@ -64,57 +64,59 @@ proc newProtocolHeader*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1]
   result.minor = minor
   result.revision = revision
 
-proc decodeFrame*(encoded: var string): Frame =
-  let s = newStringStream(encoded)
-  if encoded[0..4] == "AMQP":
-    if encoded.len < 7:
-      s.close()
-      return nil
-    s.setPosition(5)
-    let major = s.readBigEndianU8()
-    let minor = s.readBigEndianU8()
-    let revision = s.readBigEndianU8()
-    s.close()
-    encoded.delete(0, 7)
+proc getFrameHeaderInfo*(encoded: InputStream): (uint8, uint16, uint32) =
+  let s = encoded
+  let (_, fType) = s.readBigEndianU8()
+  let (_, chNum) = s.readBigEndianU16()
+  let (_, fSize) = s.readBigEndianU32()
+  return (fType, chNum, fSize)
+
+proc decodeFrame*(encoded: InputStream, startFrame: bool = false): Frame =
+  let s = encoded
+  if startFrame:
+    encoded.advance(5)
+    let (_, major) = s.readBigEndianU8()
+    let (_, minor) = s.readBigEndianU8()
+    let (_, revision) = s.readBigEndianU8()
     return newProtocolHeader(major, minor, revision)
-  var fType: uint8
-  var chNum: uint16
-  var fSize: uint32
-  try:
-    fType = s.readBigEndianU8()
-    chNum = s.readBigEndianU16()
-    fSize = s.readBigEndianU32()
-  except IOError:
-    s.close()
-    return nil
-  let fEnd = FRAME_HEADER_SIZE + fSize.int + FRAME_END_SIZE
-  if fEnd > encoded.len():
-    s.close()
-    return nil
+  let(fType, chNum, fSize) = getFrameHeaderInfo(encoded)
+  if encoded.len().isSome() and encoded.len().get().uint32 < fSize+1:
+    raise newException(FrameUnmarshalingException, "Not all data received")
   case fType
   of FRAME_METHOD:
-    let meth = dispatchMethods(s)
-    s.close()
-    encoded.delete(0, fEnd)
-    return newMethod(chNum, meth)
+    let meth: Method = s.decodeMethod()
+    result = newMethod(chNum, meth)
   of FRAME_HEADER:
-    let clsId = s.readBigEndianU16()
+    let (_, clsId) = s.readBigEndianU16()
     discard s.readBigEndianU16()
-    let bodySize = s.readBigEndianU64()
-    let props = dispatchProperties(clsId, s)
-    s.close()
-    encoded.delete(0, fEnd)
-    return newHeader(chNum, bodySize, props)
+    let (_, bodySize) = s.readBigEndianU64()
+    let props: BasicProperties = decodeProperties(clsId, s)
+    result = newHeader(chNum, bodySize, props)
   of FRAME_BODY:
-    let body = s.readStr(fSize.int)
-    s.close()
-    encoded.delete(0, fEnd)
-    return newBody(chNum, body)
+    let body = s.read(fSize.int)
+    result = newBody(chNum, body)
   of FRAME_HEARTBEAT:
-    s.close()
-    encoded.delete(0, fEnd)
-    return newHeartBeat(chNum)
+    result = newHeartBeat(chNum)
   else:
-    s.close()
-    encoded.delete(0, fEnd)
     raise newException(InvalidFieldTypeException, "No such field type")
+  let fEnd = s.readBigEndianU8()
+  if fEnd != FRAME_END:
+    raise newException(FrameUnmarshallingException, "Last byte error")
+
+proc encodeFrame*(f: Frame, to: AsyncOutputStream) {.async.} =
+  case f.frameType
+  of ftProtocolHeader:
+    discard await to.write("AMQP")
+    discard await to.writeBigEndian8(0.uint8)
+    discard await to.writeBigEndian8(f.major)
+    discard await to.writeBigEndian8(f.minor)
+    discard await to.writeBigEndian8(f.revision)
+  of ftHeader:
+    discard await to.writeBigEndian16(BASIC_FRAME_ID)
+    discard await to.writeBigEndian16(0.uint16)
+    discard await to.writeBigEndian64(f.bodySize)
+  of ftMethod:
+    discard await f.meth.encodeMethod(to)
+  of ftBody:
+    discard await to.write(f.fragment)
+    

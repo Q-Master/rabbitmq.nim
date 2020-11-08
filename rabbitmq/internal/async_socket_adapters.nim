@@ -74,7 +74,32 @@ proc disconnectInputDevice(s: InputStream) =
       s.vtable.closeSync(s)
     s.vtable = nil
 
-proc asyncReadIntoEx*(s: AsyncInputStream, dst: ptr byte, dstLen: Natural): Future[Natural] {.async, discardable.} =
+proc readIntoEx*(s: InputStream, dst: ptr byte, dstLen: Natural): Natural {.discardable.} =
+  let str = s
+  let totalBytesDrained = drainBuffersInto(str, dst, dstLen)
+  var bytesDeficit = (dstLen - totalBytesDrained)
+
+  if bytesDeficit > 0:
+    var adjustedDst = offset(dst, totalBytesDrained)
+
+    while true:
+      let newBytesRead = str.vtable.readSync(str, adjustedDst, bytesDeficit)
+
+      str.spanEndPos += newBytesRead
+      bytesDeficit -= newBytesRead
+
+      if str.buffers.eofReached:
+        disconnectInputDevice(str)
+        break
+
+      if bytesDeficit == 0:
+        break
+
+      adjustedDst = offset(dst, newBytesRead)
+
+  result = dstLen - bytesDeficit
+
+proc asyncReadIntoEx*(s: AsyncInputStream, dst: ptr byte, dstLen: Natural): Future[Natural] {.async.} =
   let str = InputStream(s)
   let totalBytesDrained = drainBuffersInto(str, dst, dstLen)
   var bytesDeficit = (dstLen - totalBytesDrained)

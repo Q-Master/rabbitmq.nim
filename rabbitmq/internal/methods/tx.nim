@@ -16,7 +16,7 @@ proc newTxSelect*(): TxSelect =
   result.new
   result.initMethod(true, 0x005A000A)
 
-proc decode*(_: type[TxSelect], encoded: AsyncInputStream): Future[TxSelect] {.async.} = newTxSelect()
+proc decode*(_: type[TxSelect], encoded: InputStream): TxSelect = newTxSelect()
 
 proc encode*(self: TxSelect, to: AsyncOutputStream) {.async.} = discard
 
@@ -26,7 +26,7 @@ proc newTxSelectOk*(): TxSelectOk =
   result.new
   result.initMethod(false, 0x005A000B)
 
-proc decode*(_: type[TxSelectOk], encoded: AsyncInputStream): Future[TxSelectOk] {.async.} = newTxSelectOk()
+proc decode*(_: type[TxSelectOk], encoded: InputStream): TxSelectOk = newTxSelectOk()
 
 proc encode*(self: TxSelectOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -36,7 +36,7 @@ proc newTxCommit*(): TxCommit =
   result.new
   result.initMethod(true, 0x005A0014)
 
-proc decode*(_: type[TxCommit], encoded: AsyncInputStream): Future[TxCommit] {.async.} = newTxCommit()
+proc decode*(_: type[TxCommit], encoded: InputStream): TxCommit = newTxCommit()
 
 proc encode*(self: TxCommit, to: AsyncOutputStream) {.async.} = discard
 
@@ -46,7 +46,7 @@ proc newTxCommitOk*(): TxCommitOk =
   result.new
   result.initMethod(false, 0x005A0015)
 
-proc decode*(_: type[TxCommitOk], encoded: AsyncInputStream): Future[TxCommitOk] {.async.} = newTxCommitOk()
+proc decode*(_: type[TxCommitOk], encoded: InputStream): TxCommitOk = newTxCommitOk()
 
 proc encode*(self: TxCommitOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -56,7 +56,7 @@ proc newTxRollback*(): TxRollback =
   result.new
   result.initMethod(true, 0x005A001E)
 
-proc decode*(_: type[TxRollback], encoded: AsyncInputStream): Future[TxRollback] {.async.} = newTxRollback()
+proc decode*(_: type[TxRollback], encoded: InputStream): TxRollback = newTxRollback()
 
 proc encode*(self: TxRollback, to: AsyncOutputStream) {.async.} = discard
 
@@ -66,6 +66,6 @@ proc newTxRollbackOk*(): TxRollbackOk =
   result.new
   result.initMethod(false, 0x005A001F)
 
-proc decode*(_: type[TxRollbackOk], encoded: AsyncInputStream): Future[TxRollbackOk] {.async.} = newTxRollbackOk()
+proc decode*(_: type[TxRollbackOk], encoded: InputStream): TxRollbackOk = newTxRollbackOk()
 
 proc encode*(self: TxRollbackOk, to: AsyncOutputStream) {.async.} = discard

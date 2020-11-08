@@ -26,8 +26,8 @@ proc newChannelOpen*(outOfBand = ""): ChannelOpen =
   result.initMethod(true, 0x0014000A)
   result.outOfBand = outOfBand
 
-proc decode*(_: type[ChannelOpen], encoded: AsyncInputStream): Future[ChannelOpen] {.async.} =
-  let (_, outOfBand) = await encoded.readShortString()
+proc decode*(_: type[ChannelOpen], encoded: InputStream): ChannelOpen =
+  let (_, outOfBand) = encoded.readShortString()
   result = newChannelOpen(outOfBand)
 
 proc encode*(self: ChannelOpen, to: AsyncOutputStream) {.async.} =
@@ -40,8 +40,8 @@ proc newChannelOpenOk*(channelId = ""): ChannelOpenOk =
   result.initMethod(false, 0x0014000B)
   result.channelId = channelId
 
-proc decode*(_: type[ChannelOpenOk], encoded: AsyncInputStream): Future[ChannelOpenOk] {.async.} =
-  let (_, channelId) = await encoded.readString()
+proc decode*(_: type[ChannelOpenOk], encoded: InputStream): ChannelOpenOk =
+  let (_, channelId) = encoded.readString()
   result = newChannelOpenOk(channelId)
 
 proc encode*(self: ChannelOpenOk, to: AsyncOutputStream) {.async.} =
@@ -54,8 +54,8 @@ proc newChannelFlow*(active = false): ChannelFlow =
   result.initMethod(true, 0x00140014)
   result.active = active
 
-proc decode*(_: type[ChannelFlow], encoded: AsyncInputStream): Future[ChannelFlow] {.async.} =
-  let (_, bbuf) = await encoded.readUint8()
+proc decode*(_: type[ChannelFlow], encoded: InputStream): ChannelFlow =
+  let (_, bbuf) = encoded.readBigEndianU8()
   let active = (bbuf and 0x01) != 0
   result = newChannelFlow(active)
 
@@ -69,8 +69,8 @@ proc newChannelFlowOk*(active = false): ChannelFlowOk =
   result.new
   result.initMethod(false, 0x00140015)
 
-proc decode*(_: type[ChannelFlowOk], encoded: AsyncInputStream): Future[ChannelFlowOk] {.async.} =
-  let (_, bbuf) = await encoded.readUint8()
+proc decode*(_: type[ChannelFlowOk], encoded: InputStream): ChannelFlowOk =
+  let (_, bbuf) = encoded.readBigEndianU8()
   let active = (bbuf and 0x01) != 0
   result = newChannelFlowOk(active)
 
@@ -88,11 +88,11 @@ proc newChannelClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 = 0
   result.classId = classId
   result.methodId = methodId
 
-proc decode*(_: type[ChannelClose], encoded: AsyncInputStream): Future[ChannelClose] {.async.} =
-  let (_, replyCode) = await encoded.readBigEndianU16()
-  let (_, replyText) = await encoded.readShortString()
-  let (_, classId) = await encoded.readUint16()
-  let (_, methodId) = await encoded.readUint16()
+proc decode*(_: type[ChannelClose], encoded: InputStream): ChannelClose =
+  let (_, replyCode) = encoded.readBigEndianU16()
+  let (_, replyText) = encoded.readShortString()
+  let (_, classId) = encoded.readBigEndianU16()
+  let (_, methodId) = encoded.readBigEndianU16()
   result = newChannelClose(replyCode, replyText, classId, methodId)
 
 proc encode*(self: ChannelClose, to: AsyncOutputStream) {.async.} =
@@ -107,6 +107,6 @@ proc newChannelCloseOk*(): ChannelCloseOk =
   result.new
   result.initMethod(false, 0x00140029)
 
-proc decode*(_: type[ChannelCloseOk], encoded: AsyncInputStream): Future[ChannelCloseOk] {.async.} = newChannelCloseOk()
+proc decode*(_: type[ChannelCloseOk], encoded: InputStream): ChannelCloseOk = newChannelCloseOk()
 
 proc encode*(self: ChannelCloseOk, to: AsyncOutputStream) {.async.} = discard

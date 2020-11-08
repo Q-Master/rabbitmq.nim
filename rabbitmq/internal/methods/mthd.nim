@@ -11,7 +11,7 @@ proc initMethod*(m: Method, syncronous: bool, index: uint32) =
   m.syncronous = syncronous
   m.index = index
 
-method decode*(self: Method, encoded: AsyncInputStream): Future[Method] {.base, async.} =
+method decode*(self: Method, encoded: InputStream): Method {.base.} =
   return self
 
 method encode*(self: Method): Future[string] {.base, async.} =

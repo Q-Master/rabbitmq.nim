@@ -63,12 +63,12 @@ proc newExchangeDeclare*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[ExchangeDeclare], encoded: AsyncInputStream): Future[ExchangeDeclare] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, eType) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[ExchangeDeclare], encoded: InputStream): ExchangeDeclare =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, exchange) = encoded.readShortString()
+  let (_, eType) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let passive = (bbuf and 0x01) != 0
   let durable = (bbuf and 0x02) != 0
   let autoDelete = (bbuf and 0x04) != 0
@@ -95,7 +95,7 @@ proc newExchangeDeclareOk*(): ExchangeDeclareOk =
   result.new
   result.initMethod(false, 0x0028000B)
 
-proc decode*(_: type[ExchangeDeclareOk], encoded: AsyncInputStream): Future[ExchangeDeclareOk] {.async.} = newExchangeDeclareOk()
+proc decode*(_: type[ExchangeDeclareOk], encoded: InputStream): ExchangeDeclareOk = newExchangeDeclareOk()
 
 proc encode*(self: ExchangeDeclareOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -109,10 +109,10 @@ proc newExchangeDelete*(ticket = 0.uint16, exchange = "", ifUnused = false, noWa
   result.ifUnused = ifUnused
   result.noWait = noWait
 
-proc decode*(_: type[ExchangeDelete], encoded: AsyncInputStream): Future[ExchangeDelete] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[ExchangeDelete], encoded: InputStream): ExchangeDelete =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, exchange) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let ifUnused = (bbuf and 0x01) != 0
   let noWait = (bbuf and 0x02) != 0
   result = newExchangeDelete(ticket, exchange, ifUnused, noWait)
@@ -131,7 +131,7 @@ proc newExchangeDeleteOk*(): ExchangeDeleteOk =
   result.new
   result.initMethod(false, 0x00280015)
 
-proc decode*(_: type[ExchangeDeleteOk], encoded: AsyncInputStream): Future[ExchangeDeleteOk] {.async.} = newExchangeDeleteOk()
+proc decode*(_: type[ExchangeDeleteOk], encoded: InputStream): ExchangeDeleteOk = newExchangeDeleteOk()
 
 proc encode*(self: ExchangeDeleteOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -152,13 +152,13 @@ proc newExchangeBind*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[ExchangeBind], encoded: AsyncInputStream): Future[ExchangeBind] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, destination) = await encoded.readShortString()
-  let (_, source) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[ExchangeBind], encoded: InputStream): ExchangeBind =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, destination) = encoded.readShortString()
+  let (_, source) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let noWait = (bbuf and 0x01) != 0
   result = newExchangeBind(ticket, destination, source, routingKey, noWait, arguments)
 
@@ -177,7 +177,7 @@ proc newExchangeBindOk*(): ExchangeBindOk =
   result.new
   result.initMethod(false, 0x0028001F)
 
-proc decode*(_: type[ExchangeBindOk], encoded: AsyncInputStream): Future[ExchangeBindOk] {.async.} = newExchangeBindOk()
+proc decode*(_: type[ExchangeBindOk], encoded: InputStream): ExchangeBindOk = newExchangeBindOk()
 
 proc encode*(self: ExchangeBindOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -198,13 +198,13 @@ proc newExchangeUnbind*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[ExchangeUnbind], encoded: AsyncInputStream): Future[ExchangeUnbind] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, destination) = await encoded.readShortString()
-  let (_, source) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[ExchangeUnbind], encoded: InputStream): ExchangeUnbind =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, destination) = encoded.readShortString()
+  let (_, source) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let noWait = (bbuf and 0x01) != 0
   result = newExchangeUnbind(ticket, destination, source, routingKey, noWait, arguments)
 
@@ -223,6 +223,6 @@ proc newExchangeUnbindOk*(): ExchangeUnbindOk =
   result.new
   result.initMethod(false, 0x00280033)
 
-proc decode*(_: type[ExchangeUnbindOk], encoded: AsyncInputStream): Future[ExchangeUnbindOk] {.async.} = newExchangeUnbindOk()
+proc decode*(_: type[ExchangeUnbindOk], encoded: InputStream): ExchangeUnbindOk = newExchangeUnbindOk()
 
 proc encode*(self: ExchangeUnbindOk, to: AsyncOutputStream) {.async.} = discard

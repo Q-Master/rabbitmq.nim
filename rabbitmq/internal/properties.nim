@@ -1,12 +1,11 @@
-import streams
-import ./exceptions
-import ./data
+import asyncdispatch
+import faststreams/[inputs, outputs]
 from ./properties/props import Properties
 import ./properties/basic
 
 export basic, Properties
 
-proc dispatchProperties*(clsId: uint16, encoded: Stream): Properties =
+proc decodeProperties*[T: Properties](clsId: uint16, encoded: InputStream): T =
   case clsId
   of 0x003C:
     result = BasicProperties.decode(encoded)

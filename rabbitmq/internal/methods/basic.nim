@@ -79,10 +79,10 @@ proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false
   result.prefetchSize = prefetchSize
   result.prefetchCount = prefetchCount
 
-proc decode*(_: type[BasicQos], encoded: AsyncInputStream): Future[BasicQos] {.async.} =
-  let (_, prefetchSize) = await encoded.readBigEndianU32()
-  let (_, prefetchCount) = await encoded.readBigEndianU16()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicQos], encoded: InputStream): BasicQos =
+  let (_, prefetchSize) = encoded.readBigEndianU32()
+  let (_, prefetchCount) = encoded.readBigEndianU16()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let globalQos = (bbuf and 0x01) != 0
   result = newBasicQos(prefetchSize, prefetchCount, globalQos)
 
@@ -98,7 +98,7 @@ proc newBasicQosOk*(): BasicQosOk =
   result.new
   result.initMethod(false, 0x003C000B)
 
-proc decode*(_: type[BasicQosOk], encoded: AsyncInputStream): Future[BasicQosOk] {.async.} =
+proc decode*(_: type[BasicQosOk], encoded: InputStream): BasicQosOk =
   result = newBasicQosOk()
 
 proc encode*(self: BasicQosOk, to: AsyncOutputStream) {.async.} = discard
@@ -125,12 +125,12 @@ proc newBasicConsume*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[BasicConsume], encoded: AsyncInputStream): Future[BasicConsume] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, consumerTag) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[BasicConsume], encoded: InputStream): BasicConsume =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, consumerTag) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let noLocal = (bbuf and 0x01) != 0
   let noAck = (bbuf and 0x02) != 0
   let exclusive = (bbuf and 0x04) != 0
@@ -156,8 +156,8 @@ proc newBasicConsumeOk*(consumerTag=""): BasicConsumeOk =
   result.initMethod(false, 0x003C0015)
   result.consumerTag = consumerTag
 
-proc decode*(_: type[BasicConsumeOk], encoded: AsyncInputStream): Future[BasicConsumeOk] {.async.} =
-  let (_, consumerTag) = await encoded.readShortString()
+proc decode*(_: type[BasicConsumeOk], encoded: InputStream): BasicConsumeOk =
+  let (_, consumerTag) = encoded.readShortString()
   result = newBasicConsumeOk(consumerTag)
 
 proc encode*(self: BasicConsumeOk, to: AsyncOutputStream) {.async.} =
@@ -171,9 +171,9 @@ proc newBasicCancel*(consumerTag="", noWait=false): BasicCancel =
   result.consumerTag = consumerTag
   result.noWait = noWait
 
-proc decode*(_: type[BasicCancel], encoded: AsyncInputStream): Future[BasicCancel] {.async.} =
-  let (_, consumerTag) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicCancel], encoded: InputStream): BasicCancel =
+  let (_, consumerTag) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let noWait = (bbuf and 0x01) != 0
   result = newBasicCancel(consumerTag, noWait)
 
@@ -189,8 +189,8 @@ proc newBasicCancelOk*(consumerTag=""): BasicCancelOk =
   result.initMethod(false, 0x003C001F)
   result.consumerTag = consumerTag
 
-proc decode*(_: type[BasicCancelOk], encoded: AsyncInputStream): Future[BasicCancelOk] {.async.} =
-  let (_, consumerTag) = await encoded.readShortString()
+proc decode*(_: type[BasicCancelOk], encoded: InputStream): BasicCancelOk =
+  let (_, consumerTag) = encoded.readShortString()
   result = newBasicCancelOk(consumerTag)
 
 proc encode*(self: BasicCancelOk, to: AsyncOutputStream) {.async.} =
@@ -207,11 +207,11 @@ proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=fal
   result.mandatory = mandatory
   result.immediate = immediate
 
-proc decode*(_: type[BasicPublish], encoded: AsyncInputStream): Future[BasicPublish] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicPublish], encoded: InputStream): BasicPublish =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, exchange) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let mandatory = (bbuf and 0x01) != 0
   let immediate = (bbuf and 0x02) != 0
   result = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
@@ -235,11 +235,11 @@ proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey="
   result.exchange = exchange
   result.routingKey = routingKey
 
-proc decode*(_: type[BasicReturn], encoded: AsyncInputStream): Future[BasicReturn] {.async.} =
-  let (_, replyCode) = await encoded.readBigEndianU16()
-  let (_, replyText) = await encoded.readShortString()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
+proc decode*(_: type[BasicReturn], encoded: InputStream): BasicReturn =
+  let (_, replyCode) = encoded.readBigEndianU16()
+  let (_, replyText) = encoded.readShortString()
+  let (_, exchange) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
   result = newBasicReturn(replyCode, replyText, exchange, routingKey)
 
 proc encode*(self: BasicReturn, to: AsyncOutputStream) {.async.} =
@@ -259,12 +259,12 @@ proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, e
   result.exchange = exchange
   result.routingKey = routingKey
 
-proc decode*(_: type[BasicDeliver], encoded: AsyncInputStream): Future[BasicDeliver] {.async.} =
-  let (_, consumerTag) = await encoded.readShortString()
-  let (_, deliveryTag) = await encoded.readBigEndianU64()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
+proc decode*(_: type[BasicDeliver], encoded: InputStream): BasicDeliver =
+  let (_, consumerTag) = encoded.readShortString()
+  let (_, deliveryTag) = encoded.readBigEndianU64()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, exchange) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
   let redelivered = (bbuf and 0x01) != 0
   result = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
 
@@ -285,10 +285,10 @@ proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): BasicGet =
   result.queue = queue
   result.noAck = noAck
 
-proc decode*(_: type[BasicGet], encoded: AsyncInputStream): Future[BasicGet] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicGet], encoded: InputStream): BasicGet =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let noAck = (bbuf and 0x01) != 0
   result = newBasicGet(ticket, queue, noAck)
 
@@ -309,12 +309,12 @@ proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routin
   result.routingKey = routingKey
   result.messageCount = messageCount
 
-proc decode*(_: type[BasicGetOk], encoded: AsyncInputStream): Future[BasicGetOk] {.async.} =
-  let (_, deliveryTag) = await encoded.readBigEndianU64()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, exchange) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, messageCount) = await encoded.readBigEndianU32()
+proc decode*(_: type[BasicGetOk], encoded: InputStream): BasicGetOk =
+  let (_, deliveryTag) = encoded.readBigEndianU64()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, exchange) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, messageCount) = encoded.readBigEndianU32()
   let redelivered = (bbuf and 0x01) != 0
   result = newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
 
@@ -333,8 +333,8 @@ proc newBasicGetEmpty*(clusterId=""): BasicGetEmpty =
   result.initMethod(false, 0x003C0048)
   result.clusterId = clusterId
 
-proc decode*(_: type[BasicGetEmpty], encoded: AsyncInputStream): Future[BasicGetEmpty] {.async.} =
-  let (_, clusterId) = await encoded.readShortString()
+proc decode*(_: type[BasicGetEmpty], encoded: InputStream): BasicGetEmpty =
+  let (_, clusterId) = encoded.readShortString()
   result = newBasicGetEmpty(clusterId)
 
 proc encode*(self: BasicGetEmpty, to: AsyncOutputStream) {.async.} =
@@ -348,9 +348,9 @@ proc newBasicAck*(deliveryTag=0.uint64, multiple=false): BasicAck =
   result.deliveryTag = deliveryTag
   result.multiple = multiple
 
-proc decode*(_: type[BasicAck], encoded: AsyncInputStream): Future[BasicAck] {.async.} =
-  let (_, deliveryTag) = await encoded.readBigEndianU64()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicAck], encoded: InputStream): BasicAck =
+  let (_, deliveryTag) = encoded.readBigEndianU64()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let multiple = (bbuf and 0x01) != 0
   result = newBasicAck(deliveryTag, multiple)
 
@@ -367,9 +367,9 @@ proc newBasicReject*(deliveryTag=0.uint64, requeue=false): BasicReject =
   result.deliveryTag = deliveryTag
   result.requeue = requeue
 
-proc decode*(_: type[BasicReject], encoded: AsyncInputStream): Future[BasicReject] {.async.} =
-  let (_, deliveryTag) = await encoded.readBigEndianU64()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicReject], encoded: InputStream): BasicReject =
+  let (_, deliveryTag) = encoded.readBigEndianU64()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicReject(deliveryTag, requeue)
 
@@ -385,8 +385,8 @@ proc newBasicRecoverAsync*(requeue=false): BasicRecoverAsync =
   result.initMethod(false, 0x003C0064)
   result.requeue = requeue
 
-proc decode*(_: type[BasicRecoverAsync], encoded: AsyncInputStream): Future[BasicRecoverAsync] {.async.} =
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicRecoverAsync], encoded: InputStream): BasicRecoverAsync =
+  let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicRecoverAsync(requeue)
 
@@ -401,8 +401,8 @@ proc newBasicRecover*(requeue=false): BasicRecover =
   result.initMethod(true, 0x003C006E)
   result.requeue = requeue
 
-proc decode*(_: type[BasicRecover], encoded: AsyncInputStream): Future[BasicRecover] {.async.} =
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicRecover], encoded: InputStream): BasicRecover =
+  let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicRecover(requeue)
 
@@ -416,7 +416,7 @@ proc newBasicRecoverOk*(): BasicRecoverOk =
   result.new
   result.initMethod(false, 0x003C006F)
 
-proc decode*(_: type[BasicRecoverOk], encoded: AsyncInputStream): Future[BasicRecoverOk] {.async.} = newBasicRecoverOk()
+proc decode*(_: type[BasicRecoverOk], encoded: InputStream): BasicRecoverOk = newBasicRecoverOk()
 
 proc encode*(self: BasicRecoverOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -429,9 +429,9 @@ proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): BasicNa
   result.multiple = multiple
   result.requeue = requeue
 
-proc decode*(_: type[BasicNack], encoded: AsyncInputStream): Future[BasicNack] {.async.} =
-  let (_, deliveryTag) = await encoded.readBigEndianU64()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[BasicNack], encoded: InputStream): BasicNack =
+  let (_, deliveryTag) = encoded.readBigEndianU64()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let multiple = (bbuf and 0x01) != 0
   let requeue = (bbuf and 0x02) != 0
   result = newBasicNack(deliveryTag, multiple, requeue)

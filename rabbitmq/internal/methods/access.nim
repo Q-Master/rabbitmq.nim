@@ -26,9 +26,9 @@ proc newAccessRequest*(realm="/data", exclusive=false, passive=true, active=true
   result.write = write
   result.read = read
 
-proc decode*(_: type[AccessRequest], encoded: AsyncInputStream): Future[AccessRequest] {.async.} =
-  let (_, realm) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[AccessRequest], encoded: InputStream): AccessRequest =
+  let (_, realm) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let exclusive = (bbuf and 0x01) != 0
   let passive = (bbuf and 0x02) != 0
   let active = (bbuf and 0x04) != 0
@@ -53,8 +53,8 @@ proc newAccessRequestOk*(ticket = 1.uint16): AccessRequestOk =
   result.initMethod(false, 0x001E000B)
   result.ticket = ticket
 
-proc decode*(_: type[AccessRequestOk], encoded: AsyncInputStream): Future[AccessRequestOk] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
+proc decode*(_: type[AccessRequestOk], encoded: InputStream): AccessRequestOk =
+  let (_, ticket) = encoded.readBigEndianU16()
   result = newAccessRequestOk(ticket)
 
 proc encode*(self: AccessRequestOk, to: AsyncOutputStream) {.async.} =

@@ -15,8 +15,8 @@ proc newConfirmSelect*(noWait=false): ConfirmSelect =
   result.initMethod(true, 0x0055000A)
   result.noWait = noWait
 
-proc decode*(_: type[ConfirmSelect], encoded: AsyncInputStream): Future[ConfirmSelect] {.async.} =
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[ConfirmSelect], encoded: InputStream): ConfirmSelect =
+  let (_, bbuf) = encoded.readBigEndianU8()
   let noWait = (bbuf and 0x01) != 0
   result = newConfirmSelect(noWait)
 
@@ -30,6 +30,6 @@ proc newConfirmSelectOk*(): ConfirmSelectOk =
   result.new
   result.initMethod(false, 0x0055000B)
 
-proc decode*(_: type[ConfirmSelectOk], encoded: AsyncInputStream): Future[ConfirmSelectOk] {.async.} = newConfirmSelectOk()
+proc decode*(_: type[ConfirmSelectOk], encoded: InputStream): ConfirmSelectOk = newConfirmSelectOk()
 
 proc encode*(self: ConfirmSelectOk, to: AsyncOutputStream) {.async.} = discard

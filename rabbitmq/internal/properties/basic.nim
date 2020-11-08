@@ -72,34 +72,94 @@ proc newBasicProperties*(
   result.appId = appId
   result.clusterId = clusterId
 
-proc decode*(_: type[BasicProperties], encoded: AsyncInputStream): Future[BasicProperties] {.async.} =
+proc decode*(_: type[BasicProperties], encoded: InputStream): BasicProperties =
   var flags: uint64 = 0
   var fidx = 0
   while true:
-    let pflags = encoded.readBigEndianU16()
+    let (_, pflags) = encoded.readBigEndianU16()
     flags = flags or (pflags.uint64 shl (fidx*16))
     if (pflags and 0x0001) == 0:
       break
     fidx += 1
-  let (_, contentType) = (if (flags and FLAG_CONTENT_TYPE) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, contentEncoding) = (if (flags and FLAG_CONTENT_ENCODING) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, headers) = (if (flags and FLAG_HEADERS) != 0: await encoded.decodeTable() else: (1, nil))
-  let (_, deliveryMode) = (if (flags and FLAG_DELIVERY_MODE) != 0: await encoded.readBigEndianU8().option else: (1, none(uint8)))
-  let (_, priority) = (if (flags and FLAG_PRIORITY) != 0: await encoded.readBigEndianU8().option else: (1, none(uint8)))
-  let (_, correlationId) = (if (flags and FLAG_CORRELATION_ID) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, replyTo) = (if (flags and FLAG_REPLY_TO) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, expiration) = (if (flags and FLAG_EXPIRATION) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, messageId) = (if (flags and FLAG_MESSAGE_ID) != 0: await encoded.readShortString().option else: (1, none(string)))
+  let contentType = block:
+    if (flags and FLAG_CONTENT_TYPE) != 0: 
+      let (_, ct) = encoded.readShortString()
+      ct.option()
+    else: 
+      none(string)
+  let contentEncoding = block:
+    if (flags and FLAG_CONTENT_ENCODING) != 0: 
+      let (_, ce) = encoded.readShortString()
+      ce.option()
+    else:
+      none(string)
+  let (_, headers) = (if (flags and FLAG_HEADERS) != 0: encoded.decodeTable() else: (1, nil))
+  let deliveryMode = block:
+    if (flags and FLAG_DELIVERY_MODE) != 0: 
+      let (_, dm) = encoded.readBigEndianU8()
+      dm.option()
+    else: 
+      none(uint8)
+  let priority = block:
+    if (flags and FLAG_PRIORITY) != 0: 
+      let (_, pri) = encoded.readBigEndianU8()
+      pri.option()
+    else: 
+      none(uint8)
+  let correlationId = block:
+    if (flags and FLAG_CORRELATION_ID) != 0:
+      let (_, cid) = encoded.readShortString()
+      cid.option()
+    else:
+      none(string)
+  let replyTo = block:
+    if (flags and FLAG_REPLY_TO) != 0:
+      let (_, rto) = encoded.readShortString()
+      rto.option()
+    else:
+      none(string)
+  let expiration = block:
+    if (flags and FLAG_EXPIRATION) != 0:
+      let (_, exp) = encoded.readShortString()
+      exp.option()
+    else:
+      none(string)
+  let messageId = block:
+    if (flags and FLAG_MESSAGE_ID) != 0:
+      let (_, mid) = encoded.readShortString()
+      mid.option()
+    else:
+      none(string)
   let timestamp = block:
     if (flags and FLAG_TIMESTAMP) != 0: 
-      let(_, tm) = await encoded.readBigEndian64() 
+      let(_, tm) = encoded.readBigEndian64() 
       fromUnix(tm).option
     else:
       none(Time)
-  let (_, pType) = (if (flags and FLAG_TYPE) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, userId) = (if (flags and FLAG_USER_ID) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, appId) = (if (flags and FLAG_APP_ID) != 0: await encoded.readShortString().option else: (1, none(string)))
-  let (_, clusterId) = (if (flags and FLAG_CLUSTER_ID) != 0: await encoded.readShortString().option else: (1, none(string)))
+  let pType = block:
+    if (flags and FLAG_TYPE) != 0:
+      let (_, pt) = encoded.readShortString()
+      pt.option()
+    else:
+      none(string)
+  let userId = block:
+    if (flags and FLAG_USER_ID) != 0:
+      let (_, uid) = encoded.readShortString()
+      uid.option()
+    else:
+      none(string)
+  let appId = block:
+    if (flags and FLAG_APP_ID) != 0:
+      let (_, aid) = encoded.readShortString()
+      aid.option()
+    else:
+      none(string)
+  let clusterId = block:
+    if (flags and FLAG_CLUSTER_ID) != 0:
+      let (_, cid) = encoded.readShortString()
+      cid.option()
+    else:
+      none(string)
   result = newBasicProperties(contentType, contentEncoding, headers, deliveryMode, priority, correlationId, replyTo, expiration, messageId, timestamp, pType, userId, appId, clusterId)
 
 proc encode*(self: BasicProperties, to: AsyncOutputStream) {.async.} =

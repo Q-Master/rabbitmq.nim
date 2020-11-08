@@ -70,11 +70,11 @@ proc newQueueDeclare*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[QueueDeclare], encoded: AsyncInputStream): Future[QueueDeclare] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[QueueDeclare], encoded: InputStream): QueueDeclare =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let passive = (bbuf and 0x01) != 0
   let durable = (bbuf and 0x02) != 0
   let exclusive = (bbuf and 0x04) != 0
@@ -103,10 +103,10 @@ proc newQueueDeclareOk*(queue="", messageCount=0.uint32, consumerCount=0.uint32)
   result.messageCount = messageCount
   result.consumerCount = consumerCount
 
-proc decode*(_: type[QueueDeclareOk], encoded: AsyncInputStream): Future[QueueDeclareOk] {.async.} =
-  let (_, queue) = await encoded.readShortString()
-  let (_, messageCount) = await encoded.readBigEndianU32()
-  let (_, consumerCount) = await encoded.readBigEndianU32()
+proc decode*(_: type[QueueDeclareOk], encoded: InputStream): QueueDeclareOk =
+  let (_, queue) = encoded.readShortString()
+  let (_, messageCount) = encoded.readBigEndianU32()
+  let (_, consumerCount) = encoded.readBigEndianU32()
   result = newQueueDeclareOk(queue, messageCount, consumerCount)
 
 proc encode*(self: QueueDeclareOk, to: AsyncOutputStream) {.async.} =
@@ -131,13 +131,13 @@ proc newQueueBind*(
   result.noWait = noWait
   result.arguments = arguments
 
-proc decode*(_: type[QueueBind], encoded: AsyncInputStream): Future[QueueBind] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bQueue) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[QueueBind], encoded: InputStream): QueueBind =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bQueue) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
+  let (_, arguments) = encoded.decodeTable()
   let noWait = (bbuf and 0x01) != 0
   result = newQueueBind(ticket, queue, bQueue, routingKey, noWait, arguments)
 
@@ -156,7 +156,7 @@ proc newQueueBindOk*(): QueueBindOk =
   result.new
   result.initMethod(false, 0x00320015)
 
-proc decode*(_: type[QueueBindOk], encoded: AsyncInputStream): Future[QueueBindOk] {.async.} = newQueueBindOk()
+proc decode*(_: type[QueueBindOk], encoded: InputStream): QueueBindOk = newQueueBindOk()
 
 proc encode*(self: QueueBindOk, to: AsyncOutputStream) {.async.} = discard
 
@@ -169,10 +169,10 @@ proc newQueuePurge*(ticket = 0.uint16, queue="", noWait=false): QueuePurge =
   result.queue = queue
   result.noWait = noWait
 
-proc decode*(_: type[QueuePurge], encoded: AsyncInputStream): Future[QueuePurge] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[QueuePurge], encoded: InputStream): QueuePurge =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let noWait = (bbuf and 0x01) != 0
   result = newQueuePurge(ticket, queue, noWait)
 
@@ -189,8 +189,8 @@ proc newQueuePurgeOk*(messageCount = 0.uint32): QueuePurgeOk =
   result.initMethod(false, 0x0032001F)
   result.messageCount = messageCount
 
-proc decode*(_: type[QueuePurgeOk], encoded: AsyncInputStream): Future[QueuePurgeOk] {.async.} =
-  let (_, messageCount) = await encoded.readBigEndianU32()
+proc decode*(_: type[QueuePurgeOk], encoded: InputStream): QueuePurgeOk =
+  let (_, messageCount) = encoded.readBigEndianU32()
   result = newQueuePurgeOk(messageCount)
 
 proc encode*(self: QueuePurgeOk, to: AsyncOutputStream) {.async.} =
@@ -207,10 +207,10 @@ proc newQueueDelete*(ticket = 0.uint16, queue="", ifUnused=false, ifEmpty=false,
   result.ifEmpty = ifEmpty
   result.noWait = noWait
 
-proc decode*(_: type[QueueDelete], encoded: AsyncInputStream): Future[QueueDelete] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bbuf) = await encoded.readBigEndianU8()
+proc decode*(_: type[QueueDelete], encoded: InputStream): QueueDelete =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bbuf) = encoded.readBigEndianU8()
   let ifUnused = (bbuf and 0x01) != 0
   let ifEmpty = (bbuf and 0x02) != 0
   let noWait = (bbuf and 0x04) != 0
@@ -232,8 +232,8 @@ proc newQueueDeleteOk*(messageCount = 0.uint32): QueueDeleteOk =
   result.initMethod(false, 0x00320029)
   result.messageCount = messageCount
 
-proc decode*(_: type[QueueDeleteOk], encoded: AsyncInputStream): Future[QueueDeleteOk] {.async.} =
-  let (_, messageCount) = await encoded.readBigEndianU32()
+proc decode*(_: type[QueueDeleteOk], encoded: InputStream): QueueDeleteOk =
+  let (_, messageCount) = encoded.readBigEndianU32()
   result = newQueueDeleteOk(messageCount)
 
 proc encode*(self: QueueDeleteOk, to: AsyncOutputStream) {.async.} =
@@ -254,12 +254,12 @@ proc newQueueUnbind*(
   result.routingKey = routingKey
   result.arguments = arguments
 
-proc decode*(_: type[QueueUnbind], encoded: AsyncInputStream): Future[QueueUnbind] {.async.} =
-  let (_, ticket) = await encoded.readBigEndianU16()
-  let (_, queue) = await encoded.readShortString()
-  let (_, bQueue) = await encoded.readShortString()
-  let (_, routingKey) = await encoded.readShortString()
-  let (_, arguments) = await encoded.decodeTable()
+proc decode*(_: type[QueueUnbind], encoded: InputStream): QueueUnbind =
+  let (_, ticket) = encoded.readBigEndianU16()
+  let (_, queue) = encoded.readShortString()
+  let (_, bQueue) = encoded.readShortString()
+  let (_, routingKey) = encoded.readShortString()
+  let (_, arguments) = encoded.decodeTable()
   result = newQueueUnbind(ticket, queue, bQueue, routingKey, arguments)
 
 proc encode*(self: QueueUnbind, to: AsyncOutputStream) {.async.} =
@@ -275,6 +275,6 @@ proc newQueueUnbindOk*(): QueueUnbindOk =
   result.new
   result.initMethod(false, 0x00320033)
 
-proc decode*(_: type[QueueUnbindOk], encoded: AsyncInputStream): Future[QueueUnbindOk] {.async.} = newQueueUnbindOk()
+proc decode*(_: type[QueueUnbindOk], encoded: InputStream): QueueUnbindOk = newQueueUnbindOk()
 
 proc encode*(self: QueueUnbindOk, to: AsyncOutputStream) {.async.} = discard
