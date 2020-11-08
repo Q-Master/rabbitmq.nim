@@ -41,6 +41,10 @@ type
     # Frame Errors
     FrameUnmarshalingException* = object of CatchableError
 
+type
+    # Auth Errors
+    AuthenticationError* = object of CatchableError
+
 #[
 # AMQP Errors
 class AMQPContentTooLarge(Warning):
