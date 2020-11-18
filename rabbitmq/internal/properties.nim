@@ -1,7 +1,6 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 from ./properties/props import Properties
 import ./properties/basic
+import ./streams
 
 export basic, Properties
 

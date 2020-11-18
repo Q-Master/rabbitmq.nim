@@ -1,5 +1,4 @@
-import asyncdispatch
-import faststreams/inputs
+import ../streams
 
 type
   Method* {.inheritable.} = ref MethodObj
@@ -14,5 +13,5 @@ proc initMethod*(m: Method, syncronous: bool, index: uint32) =
 method decode*(self: Method, encoded: InputStream): Method {.base.} =
   return self
 
-method encode*(self: Method): Future[string] {.base, async.} =
+method encode*(self: Method): string {.base.} =
   return ""

@@ -1,7 +1,6 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./mthd
 import ../data
+import ../streams
 
 type 
   AccessRequest* = ref object of Method
@@ -36,15 +35,15 @@ proc decode*(_: type[AccessRequest], encoded: InputStream): AccessRequest =
   let read = (bbuf and 0x10) != 0
   result = newAccessRequest(realm, exclusive, passive, active, write, read)
 
-proc encode*(self: AccessRequest, to: AsyncOutputStream) {.async.} =
+proc encode*(self: AccessRequest, to: OutputStream) =
   let bbuf: uint8 = 0x00.uint8 or 
     (if self.exclusive: 0x01 else: 0x00) or 
     (if self.passive: 0x02 else: 0x00) or 
     (if self.active: 0x04 else: 0x00) or 
     (if self.write: 0x08 else: 0x00) or 
     (if self.read: 0x10 else: 0x00)
-  discard await to.writeShortString(self.realm)
-  discard await to.writeBigEndian8(bbuf)
+  to.writeShortString(self.realm)
+  to.writeBigEndian8(bbuf)
 
 #--------------- Access.RequestOk ---------------#
 
@@ -57,5 +56,5 @@ proc decode*(_: type[AccessRequestOk], encoded: InputStream): AccessRequestOk =
   let (_, ticket) = encoded.readBigEndianU16()
   result = newAccessRequestOk(ticket)
 
-proc encode*(self: AccessRequestOk, to: AsyncOutputStream) {.async.} =
-  discard await to.writeBigEndian16(self.ticket)
+proc encode*(self: AccessRequestOk, to: OutputStream) =
+  to.writeBigEndian16(self.ticket)

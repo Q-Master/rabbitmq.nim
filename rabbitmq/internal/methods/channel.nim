@@ -1,7 +1,6 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./mthd
 import ../data
+import ../streams
 
 type 
   ChannelOpen* = ref object of Method
@@ -30,8 +29,8 @@ proc decode*(_: type[ChannelOpen], encoded: InputStream): ChannelOpen =
   let (_, outOfBand) = encoded.readShortString()
   result = newChannelOpen(outOfBand)
 
-proc encode*(self: ChannelOpen, to: AsyncOutputStream) {.async.} =
-  discard await to.writeShortString(self.outOfBand)
+proc encode*(self: ChannelOpen, to: OutputStream) =
+  to.writeShortString(self.outOfBand)
 
 #--------------- Channel.OpenOk ---------------#
 
@@ -44,8 +43,8 @@ proc decode*(_: type[ChannelOpenOk], encoded: InputStream): ChannelOpenOk =
   let (_, channelId) = encoded.readString()
   result = newChannelOpenOk(channelId)
 
-proc encode*(self: ChannelOpenOk, to: AsyncOutputStream) {.async.} =
-  discard await to.writeString(self.channelId)
+proc encode*(self: ChannelOpenOk, to: OutputStream) =
+  to.writeString(self.channelId)
 
 #--------------- Channel.Flow ---------------#
 
@@ -59,9 +58,9 @@ proc decode*(_: type[ChannelFlow], encoded: InputStream): ChannelFlow =
   let active = (bbuf and 0x01) != 0
   result = newChannelFlow(active)
 
-proc encode*(self: ChannelFlow, to: AsyncOutputStream) {.async.} =
+proc encode*(self: ChannelFlow, to: OutputStream) =
   let bbuf: uint8 = (if self.active: 0x01 else: 0x00)
-  discard await to.writeBigEndian8(bbuf)
+  to.writeBigEndian8(bbuf)
 
 #--------------- Channel.FlowOk ---------------#
 
@@ -74,9 +73,9 @@ proc decode*(_: type[ChannelFlowOk], encoded: InputStream): ChannelFlowOk =
   let active = (bbuf and 0x01) != 0
   result = newChannelFlowOk(active)
 
-proc encode*(self: ChannelFlowOk, to: AsyncOutputStream) {.async.} =
+proc encode*(self: ChannelFlowOk, to: OutputStream) =
   let bbuf: uint8 = (if self.active: 0x01 else: 0x00)
-  discard await to.writeBigEndian8(bbuf)
+  to.writeBigEndian8(bbuf)
 
 #--------------- Channel.Close ---------------#
 
@@ -95,11 +94,11 @@ proc decode*(_: type[ChannelClose], encoded: InputStream): ChannelClose =
   let (_, methodId) = encoded.readBigEndianU16()
   result = newChannelClose(replyCode, replyText, classId, methodId)
 
-proc encode*(self: ChannelClose, to: AsyncOutputStream) {.async.} =
-  discard await to.writeBigEndian16(self.replyCode)
-  discard await to.writeShortString(self.replyText)
-  discard await to.writeBigEndian16(self.classId)
-  discard await to.writeBigEndian16(self.methodId)
+proc encode*(self: ChannelClose, to: OutputStream) =
+  to.writeBigEndian16(self.replyCode)
+  to.writeShortString(self.replyText)
+  to.writeBigEndian16(self.classId)
+  to.writeBigEndian16(self.methodId)
 
 #--------------- Channel.CloseOk ---------------#
 
@@ -109,4 +108,4 @@ proc newChannelCloseOk*(): ChannelCloseOk =
 
 proc decode*(_: type[ChannelCloseOk], encoded: InputStream): ChannelCloseOk = newChannelCloseOk()
 
-proc encode*(self: ChannelCloseOk, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: ChannelCloseOk, to: OutputStream) = discard

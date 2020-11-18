@@ -1,10 +1,9 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./spec
 import ./data
 import ./exceptions
 import ./methods
 import ./properties
+import ./streams
 
 type
   FrameType* = enum
@@ -24,7 +23,7 @@ type
       bodySize: uint64
       props: Properties
     of ftBody:
-      fragment: seq[byte]
+      fragment: string
     of ftHeartBeat:
       discard
     of ftProtocolHeader:
@@ -45,7 +44,7 @@ proc newHeader*(channelNum: uint16, bodySize: uint64, props: Properties): Frame 
   result.bodySize = bodySize
   result.props = props
 
-proc newBody*(channelNum: uint16, fragment: seq[byte]): Frame =
+proc newBody*(channelNum: uint16, fragment: string): Frame =
   result.new
   result.frameType = ftBody
   result.channelNum = channelNum
@@ -80,7 +79,7 @@ proc decodeFrame*(encoded: InputStream, startFrame: bool = false): Frame =
     let (_, revision) = s.readBigEndianU8()
     return newProtocolHeader(major, minor, revision)
   let(fType, chNum, fSize) = getFrameHeaderInfo(encoded)
-  if encoded.len().isSome() and encoded.len().get().uint32 < fSize+1:
+  if encoded.len().uint32 < fSize+1:
     raise newException(FrameUnmarshalingException, "Not all data received")
   case fType
   of FRAME_METHOD:
@@ -90,33 +89,36 @@ proc decodeFrame*(encoded: InputStream, startFrame: bool = false): Frame =
     let (_, clsId) = s.readBigEndianU16()
     discard s.readBigEndianU16()
     let (_, bodySize) = s.readBigEndianU64()
-    let props: BasicProperties = decodeProperties(clsId, s)
+    let props: BasicProperties = decodeProperties[BasicProperties](clsId, s)
     result = newHeader(chNum, bodySize, props)
   of FRAME_BODY:
-    let body = s.read(fSize.int)
-    result = newBody(chNum, body)
+    var str = newString(fSize.int)
+    s.readInto(str)
+    str.setLen(fSize.int)
+    result = newBody(chNum, str)
   of FRAME_HEARTBEAT:
     result = newHeartBeat(chNum)
   else:
     raise newException(InvalidFieldTypeException, "No such field type")
-  let fEnd = s.readBigEndianU8()
+  let (_, fEnd) = s.readBigEndianU8()
   if fEnd != FRAME_END:
-    raise newException(FrameUnmarshallingException, "Last byte error")
+    raise newException(FrameUnmarshalingException, "Last byte error")
 
-proc encodeFrame*(f: Frame, to: AsyncOutputStream) {.async.} =
+proc encodeFrame*(f: Frame, to: OutputStream) =
   case f.frameType
   of ftProtocolHeader:
-    discard await to.write("AMQP")
-    discard await to.writeBigEndian8(0.uint8)
-    discard await to.writeBigEndian8(f.major)
-    discard await to.writeBigEndian8(f.minor)
-    discard await to.writeBigEndian8(f.revision)
+    to.write("AMQP")
+    to.writeBigEndian8(0.uint8)
+    to.writeBigEndian8(f.major)
+    to.writeBigEndian8(f.minor)
+    to.writeBigEndian8(f.revision)
   of ftHeader:
-    discard await to.writeBigEndian16(BASIC_FRAME_ID)
-    discard await to.writeBigEndian16(0.uint16)
-    discard await to.writeBigEndian64(f.bodySize)
+    to.writeBigEndian16(BASIC_FRAME_ID)
+    to.writeBigEndian16(0.uint16)
+    to.writeBigEndian64(f.bodySize)
   of ftMethod:
-    discard await f.meth.encodeMethod(to)
+    f.meth.encodeMethod(to)
   of ftBody:
-    discard await to.write(f.fragment)
-    
+    to.write(f.fragment)
+  else:
+    discard

@@ -1,5 +1,3 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 from ./methods/mthd import Method
 import ./methods/connection
 import ./methods/channel
@@ -11,6 +9,7 @@ import ./methods/confirm
 import ./methods/access
 import ./exceptions
 import ./data
+import ./streams
 
 export connection, channel, exchange, queue, basic, tx, confirm, access
 export Method
@@ -151,145 +150,143 @@ proc decodeMethod*(encoded: InputStream): Method =
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
-proc encodeMethod*[T: Method](m: T, to: AsyncOutputStream) {.async.}
-
-proc encodeMethod*(m: Method, to: AsyncOutputStream) {.async.} =
+proc encodeMethod*(m: Method, to: OutputStream) =
   case m.index
   of 0x000A000A:
-    await cast[ConnectionStart](m).encodeMethod(to)
+    cast[ConnectionStart](m).encodeMethod(to)
   of 0x000A000B:
-    await cast[ConnectionStartOk](m).encodeMethod(to)
+    cast[ConnectionStartOk](m).encodeMethod(to)
   of 0x000A0014:
-    await cast[ConnectionSecure](m).encodeMethod(to)
+    cast[ConnectionSecure](m).encodeMethod(to)
   of 0x000A0015:
-    await cast[ConnectionSecureOk](m).encodeMethod(to)
+    cast[ConnectionSecureOk](m).encodeMethod(to)
   of 0x000A001E:
-    await cast[ConnectionTune](m).encodeMethod(to)
+    cast[ConnectionTune](m).encodeMethod(to)
   of 0x000A001F:
-    await cast[ConnectionTuneOk](m).encodeMethod(to)
+    cast[ConnectionTuneOk](m).encodeMethod(to)
   of 0x000A0028:
-    await cast[ConnectionOpen](m).encodeMethod(to)
+    cast[ConnectionOpen](m).encodeMethod(to)
   of 0x000A0029:
-    await cast[ConnectionOpenOk](m).encodeMethod(to)
+    cast[ConnectionOpenOk](m).encodeMethod(to)
   of 0x000A0032:
-    await cast[ConnectionClose](m).encodeMethod(to)
+    cast[ConnectionClose](m).encodeMethod(to)
   of 0x000A0033:
-    await cast[ConnectionCloseOk](m).encodeMethod(to)
+    cast[ConnectionCloseOk](m).encodeMethod(to)
   of 0x000A003C:
-    await cast[ConnectionBlocked](m).encodeMethod(to)
+    cast[ConnectionBlocked](m).encodeMethod(to)
   of 0x000A003D:
-    await cast[ConnectionUnblocked](m).encodeMethod(to)
+    cast[ConnectionUnblocked](m).encodeMethod(to)
   of 0x0014000A:
-    await cast[ChannelOpen](m).encodeMethod(to)
+    cast[ChannelOpen](m).encodeMethod(to)
   of 0x0014000B:
-    await cast[ChannelOpenOk](m).encodeMethod(to)
+    cast[ChannelOpenOk](m).encodeMethod(to)
   of 0x00140014:
-    await cast[ChannelFlow](m).encodeMethod(to)
+    cast[ChannelFlow](m).encodeMethod(to)
   of 0x00140015:
-    await cast[ChannelFlowOk](m).encodeMethod(to)
+    cast[ChannelFlowOk](m).encodeMethod(to)
   of 0x00140028:
-    await cast[ChannelClose](m).encodeMethod(to)
+    cast[ChannelClose](m).encodeMethod(to)
   of 0x00140029:
-    await cast[ChannelCloseOk](m).encodeMethod(to)
+    cast[ChannelCloseOk](m).encodeMethod(to)
   of 0x001E000A:
-    await cast[AccessRequest](m).encodeMethod(to)
+    cast[AccessRequest](m).encodeMethod(to)
   of 0x001E000B:
-    await cast[AccessRequestOk](m).encodeMethod(to)
+    cast[AccessRequestOk](m).encodeMethod(to)
   of 0x0028000A:
-    await cast[ExchangeDeclare](m).encodeMethod(to)
+    cast[ExchangeDeclare](m).encodeMethod(to)
   of 0x0028000B:
-    await cast[ExchangeDeclareOk](m).encodeMethod(to)
+    cast[ExchangeDeclareOk](m).encodeMethod(to)
   of 0x00280014:
-    await cast[ExchangeDelete](m).encodeMethod(to)
+    cast[ExchangeDelete](m).encodeMethod(to)
   of 0x00280015:
-    await cast[ExchangeDeleteOk](m).encodeMethod(to)
+    cast[ExchangeDeleteOk](m).encodeMethod(to)
   of 0x0028001E:
-    await cast[ExchangeBind](m).encodeMethod(to)
+    cast[ExchangeBind](m).encodeMethod(to)
   of 0x0028001F:
-    await cast[ExchangeBindOk](m).encodeMethod(to)
+    cast[ExchangeBindOk](m).encodeMethod(to)
   of 0x00280028:
-    await cast[ExchangeUnbind](m).encodeMethod(to)
+    cast[ExchangeUnbind](m).encodeMethod(to)
   of 0x00280033:
-    await cast[ExchangeUnbindOk](m).encodeMethod(to)
+    cast[ExchangeUnbindOk](m).encodeMethod(to)
   of 0x0032000A:
-    await cast[QueueDeclare](m).encodeMethod(to)
+    cast[QueueDeclare](m).encodeMethod(to)
   of 0x0032000B:
-    await cast[QueueDeclareOk](m).encodeMethod(to)
+    cast[QueueDeclareOk](m).encodeMethod(to)
   of 0x00320014:
-    await cast[QueueBind](m).encodeMethod(to)
+    cast[QueueBind](m).encodeMethod(to)
   of 0x00320015:
-    await cast[QueueBindOk](m).encodeMethod(to)
+    cast[QueueBindOk](m).encodeMethod(to)
   of 0x0032001E:
-    await cast[QueuePurge](m).encodeMethod(to)
+    cast[QueuePurge](m).encodeMethod(to)
   of 0x0032001F:
-    await cast[QueuePurgeOk](m).encodeMethod(to)
+    cast[QueuePurgeOk](m).encodeMethod(to)
   of 0x00320028:
-    await cast[QueueDelete](m).encodeMethod(to)
+    cast[QueueDelete](m).encodeMethod(to)
   of 0x00320029:
-    await cast[QueueDeleteOk](m).encodeMethod(to)
+    cast[QueueDeleteOk](m).encodeMethod(to)
   of 0x00320032:
-    await cast[QueueUnbind](m).encodeMethod(to)
+    cast[QueueUnbind](m).encodeMethod(to)
   of 0x00320033:
-    await cast[QueueUnbindOk](m).encodeMethod(to)
+    cast[QueueUnbindOk](m).encodeMethod(to)
   of 0x003C000A:
-    await cast[BasicQos](m).encodeMethod(to)
+    cast[BasicQos](m).encodeMethod(to)
   of 0x003C000B:
-    await cast[BasicQosOk](m).encodeMethod(to)
+    cast[BasicQosOk](m).encodeMethod(to)
   of 0x003C0014:
-    await cast[BasicConsume](m).encodeMethod(to)
+    cast[BasicConsume](m).encodeMethod(to)
   of 0x003C0015:
-    await cast[BasicConsumeOk](m).encodeMethod(to)
+    cast[BasicConsumeOk](m).encodeMethod(to)
   of 0x003C001E:
-    await cast[BasicCancel](m).encodeMethod(to)
+    cast[BasicCancel](m).encodeMethod(to)
   of 0x003C001F:
-    await cast[BasicCancelOk](m).encodeMethod(to)
+    cast[BasicCancelOk](m).encodeMethod(to)
   of 0x003C0028:
-    await cast[BasicPublish](m).encodeMethod(to)
+    cast[BasicPublish](m).encodeMethod(to)
   of 0x003C0032:
-    await cast[BasicReturn](m).encodeMethod(to)
+    cast[BasicReturn](m).encodeMethod(to)
   of 0x003C003C:
-    await cast[BasicDeliver](m).encodeMethod(to)
+    cast[BasicDeliver](m).encodeMethod(to)
   of 0x003C0046:
-    await cast[BasicGet](m).encodeMethod(to)
+    cast[BasicGet](m).encodeMethod(to)
   of 0x003C0047:
-    await cast[BasicGetOk](m).encodeMethod(to)
+    cast[BasicGetOk](m).encodeMethod(to)
   of 0x003C0048:
-    await cast[BasicGetEmpty](m).encodeMethod(to)
+    cast[BasicGetEmpty](m).encodeMethod(to)
   of 0x003C0050:
-    await cast[BasicAck](m).encodeMethod(to)
+    cast[BasicAck](m).encodeMethod(to)
   of 0x003C005A:
-    await cast[BasicReject](m).encodeMethod(to)
+    cast[BasicReject](m).encodeMethod(to)
   of 0x003C0064:
-    await cast[BasicRecoverAsync](m).encodeMethod(to)
+    cast[BasicRecoverAsync](m).encodeMethod(to)
   of 0x003C006E:
-    await cast[BasicRecover](m).encodeMethod(to)
+    cast[BasicRecover](m).encodeMethod(to)
   of 0x003C006F:
-    await cast[BasicRecoverOk](m).encodeMethod(to)
+    cast[BasicRecoverOk](m).encodeMethod(to)
   of 0x003C0078:
-    await cast[BasicNack](m).encodeMethod(to)
+    cast[BasicNack](m).encodeMethod(to)
   of 0x005A000A:
-    await cast[TxSelect](m).encodeMethod(to)
+    cast[TxSelect](m).encodeMethod(to)
   of 0x005A000B:
-    await cast[TxSelectOk](m).encodeMethod(to)
+    cast[TxSelectOk](m).encodeMethod(to)
   of 0x005A0014:
-    await cast[TxCommit](m).encodeMethod(to)
+    cast[TxCommit](m).encodeMethod(to)
   of 0x005A0015:
-    await cast[TxCommitOk](m).encodeMethod(to)
+    cast[TxCommitOk](m).encodeMethod(to)
   of 0x005A001E:
-    await cast[TxRollback](m).encodeMethod(to)
+    cast[TxRollback](m).encodeMethod(to)
   of 0x005A001F:
-    await cast[TxRollbackOk](m).encodeMethod(to)
+    cast[TxRollbackOk](m).encodeMethod(to)
   of 0x0055000A:
-    await cast[ConfirmSelect](m).encodeMethod(to)
+    cast[ConfirmSelect](m).encodeMethod(to)
   of 0x0055000B:
-    await cast[ConfirmSelectOk](m).encodeMethod(to)
+    cast[ConfirmSelectOk](m).encodeMethod(to)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
 const WRONG_METHOD_STR = "Wrong method"
 
-proc encodeMethod*[T: Method](m: T, to: AsyncOutputStream) {.async.} =
-  discard await to.writeBigEndian32(m.index)
+proc encodeMethod*[T: Method](m: T, to: OutputStream) =
+  to.writeBigEndian32(m.index)
   case m.index
   of 0x000A000A:
     if m is not ConnectionStart:
@@ -485,4 +482,4 @@ proc encodeMethod*[T: Method](m: T, to: AsyncOutputStream) {.async.} =
       raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
-  await m.encode(to)
+  m.encode(to)

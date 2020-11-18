@@ -1,6 +1,5 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./mthd
+import ../streams
 
 type 
   TxSelect* = ref object of Method
@@ -18,7 +17,7 @@ proc newTxSelect*(): TxSelect =
 
 proc decode*(_: type[TxSelect], encoded: InputStream): TxSelect = newTxSelect()
 
-proc encode*(self: TxSelect, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxSelect, to: OutputStream) = discard
 
 #--------------- Tx.SelectOk ---------------#
 
@@ -28,7 +27,7 @@ proc newTxSelectOk*(): TxSelectOk =
 
 proc decode*(_: type[TxSelectOk], encoded: InputStream): TxSelectOk = newTxSelectOk()
 
-proc encode*(self: TxSelectOk, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxSelectOk, to: OutputStream) = discard
 
 #--------------- Tx.Commit ---------------#
 
@@ -38,7 +37,7 @@ proc newTxCommit*(): TxCommit =
 
 proc decode*(_: type[TxCommit], encoded: InputStream): TxCommit = newTxCommit()
 
-proc encode*(self: TxCommit, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxCommit, to: OutputStream) = discard
 
 #--------------- Tx.CommitOk ---------------#
 
@@ -48,7 +47,7 @@ proc newTxCommitOk*(): TxCommitOk =
 
 proc decode*(_: type[TxCommitOk], encoded: InputStream): TxCommitOk = newTxCommitOk()
 
-proc encode*(self: TxCommitOk, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxCommitOk, to: OutputStream) = discard
 
 #--------------- Tx.Rollback ---------------#
 
@@ -58,7 +57,7 @@ proc newTxRollback*(): TxRollback =
 
 proc decode*(_: type[TxRollback], encoded: InputStream): TxRollback = newTxRollback()
 
-proc encode*(self: TxRollback, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxRollback, to: OutputStream) = discard
 
 #--------------- Tx.RollbackOk ---------------#
 
@@ -68,4 +67,4 @@ proc newTxRollbackOk*(): TxRollbackOk =
 
 proc decode*(_: type[TxRollbackOk], encoded: InputStream): TxRollbackOk = newTxRollbackOk()
 
-proc encode*(self: TxRollbackOk, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: TxRollbackOk, to: OutputStream) = discard

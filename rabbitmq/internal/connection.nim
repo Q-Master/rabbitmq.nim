@@ -6,6 +6,8 @@ import locks
 import net
 import faststreams/[inputs, outputs]
 import times
+import ./auth
+import ./async_socket_adapters
 import ./url
 import ./channel
 import ./data
@@ -50,7 +52,8 @@ type
     lastChannel {.guard: lastChannelLock.} : int
     hearbeatMonitoring: bool
     heartbeatTimeout: int
-    heartbeatLastReceived: int
+    heartbeatLastReceived: Time
+    auth: AuthMechanism
     connected: AsyncEvent
     connectionName: string
   ConnectionPool* = ref ConnectionPoolObj
@@ -74,7 +77,8 @@ proc newAsyncConnection(): AsyncConnection =
     result.lastChannel = 1
   result.hearbeatMonitoring = true
   result.heartbeatTimeout = 0
-  result.heartbeatLastReceived = 0
+  result.heartbeatLastReceived = fromUnix(0)
+  result.auth = AUTH_NOT_SET
   result.connected = newAsyncEvent()
   result.connectionName = ""
 
@@ -181,10 +185,6 @@ proc newConnectionInfoWithURL(url: string): ConnectionInfo =
   )
 
 #[
-        credentials = self._credentials_class(frame)
-
-        self.server_properties = frame.server_properties
-
         # noinspection PyTypeChecker
         self.connection_tune = await self.__rpc(
             spec.Connection.StartOk(
@@ -228,9 +228,11 @@ proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.} =
   result.inStream = asyncSocketInput(result.sock)
   result.outStream = asyncSocketOutput(result.sock)
   let pHeader = newProtocolHeader()
-  pHeader.encodeFrame(result.outStream)
-  let res: ConnectionStart = await result.receiveFrame()
-  result.heartbeatLastReceived = now()
+  await pHeader.encodeFrame(result.outStream)
+  let res: ConnectionStart = cast[ConnectionStart](await result.receiveFrame())
+  result.heartbeatLastReceived = getTime()
+  result.auth = getAuthMechanism(res.mechanisms)
+  result.serverProps = res.properties
 
 
 proc receiveFrame(conn: AsyncConnection): Future[Frame] {.async.} =
@@ -251,7 +253,3 @@ proc receiveFrame(conn: AsyncConnection): Future[Frame] {.async.} =
   let frameStream = unsafeMemoryInput(frameHeader)
   result = decodeFrame(frameStream.s, startFrame)
   frameStream.close()
-
-proc decodeMechanisms(conn: ConnectionStart):
-  for mechanism in conn.mechanisms.split({' ', ',', ';', '|'}):
-    discard

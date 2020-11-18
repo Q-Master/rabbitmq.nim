@@ -1,11 +1,9 @@
 import options
 import tables
 import times
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./props
 import ../data
-import ../async_socket_adapters
+import ../streams
 
 const FLAG_CONTENT_TYPE: uint16 = 0x0001 shl 15
 const FLAG_CONTENT_ENCODING: uint16 = 0x0001 shl 14
@@ -162,51 +160,50 @@ proc decode*(_: type[BasicProperties], encoded: InputStream): BasicProperties =
       none(string)
   result = newBasicProperties(contentType, contentEncoding, headers, deliveryMode, priority, correlationId, replyTo, expiration, messageId, timestamp, pType, userId, appId, clusterId)
 
-proc encode*(self: BasicProperties, to: AsyncOutputStream) {.async.} =
-  let tmpStream = memoryOutput()
-  let asyncTmpStream = AsyncOutputStream(tmpStream.s)
+proc encode*(self: BasicProperties, to: OutputStream) =
+  let tmpStream = newOutputStream()
   var flags: uint64 = 0
   if self.contentType.isSome():
-    discard await asyncTmpStream.writeShortString(self.contentType.get())
+    tmpStream.writeShortString(self.contentType.get())
     flags = flags or FLAG_CONTENT_TYPE
   if self.contentEncoding.isSome():
-    discard await asyncTmpStream.writeShortString(self.contentEncoding.get())
+    tmpStream.writeShortString(self.contentEncoding.get())
     flags = flags or FLAG_CONTENT_ENCODING
   if not self.headers.isNil():
-    discard await asyncTmpStream.encodeTable(self.headers)
+    tmpStream.encodeTable(self.headers)
     flags = flags or FLAG_HEADERS
   if self.deliveryMode.isSome():
-    discard await asyncTmpStream.writeBigEndian8(self.deliveryMode.get())
+    tmpStream.writeBigEndian8(self.deliveryMode.get())
     flags = flags or FLAG_DELIVERY_MODE
   if self.priority.isSome():
-    discard await asyncTmpStream.writeBigEndian8(self.priority.get())
+    tmpStream.writeBigEndian8(self.priority.get())
     flags = flags or FLAG_PRIORITY
   if self.correlationId.isSome():
-    discard await asyncTmpStream.writeShortString(self.correlationId.get())
+    tmpStream.writeShortString(self.correlationId.get())
     flags = flags or FLAG_CORRELATION_ID
   if self.replyTo.isSome():
-    discard await asyncTmpStream.writeShortString(self.replyTo.get())
+    tmpStream.writeShortString(self.replyTo.get())
     flags = flags or FLAG_REPLY_TO
   if self.expiration.isSome():
-    discard await asyncTmpStream.writeShortString(self.expiration.get())
+    tmpStream.writeShortString(self.expiration.get())
     flags = flags or FLAG_EXPIRATION
   if self.messageId.isSome():
-    discard await asyncTmpStream.writeShortString(self.messageId.get())
+    tmpStream.writeShortString(self.messageId.get())
     flags = flags or FLAG_MESSAGE_ID
   if self.timestamp.isSome():
-    discard await asyncTmpStream.writeBigEndian64(self.timestamp.get().toUnix())
+    tmpStream.writeBigEndian64(self.timestamp.get().toUnix())
     flags = flags or FLAG_TIMESTAMP
   if self.pType.isSome():
-    discard await asyncTmpStream.writeShortString(self.pType.get())
+    tmpStream.writeShortString(self.pType.get())
     flags = flags or FLAG_TYPE
   if self.userId.isSome():
-    discard await asyncTmpStream.writeShortString(self.userId.get())
+    tmpStream.writeShortString(self.userId.get())
     flags = flags or FLAG_USER_ID
   if self.appId.isSome():
-    discard await asyncTmpStream.writeShortString(self.appId.get())
+    tmpStream.writeShortString(self.appId.get())
     flags = flags or FLAG_APP_ID
   if self.clusterId.isSome():
-    discard await asyncTmpStream.writeShortString(self.clusterId.get())
+    tmpStream.writeShortString(self.clusterId.get())
     flags = flags or FLAG_CLUSTER_ID
   
   while true:
@@ -214,13 +211,13 @@ proc encode*(self: BasicProperties, to: AsyncOutputStream) {.async.} =
     var pflags = (flags and 0xfffe).uint16
     if remainder != 0:
       pflags = pflags or 0x0001
-    discard await to.writeBigEndian16(pflags)
+    to.writeBigEndian16(pflags)
     flags = remainder
     if flags == 0:
       break
-  let output: seq[byte] = asyncTmpStream.getOutput()
-  await to.asyncWriteBytes(cast[ptr byte](unsafeAddr output[0]), output.len)
-
+  let output: string = tmpStream.readAll()
+  to.write(output)
+  
 #[
 class BasicProperties(amqp_object.Properties):
     CLASS = Basic

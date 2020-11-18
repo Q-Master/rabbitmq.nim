@@ -7,6 +7,7 @@ import ./async_socket_adapters
 
 type
   AuthMechanism* = enum
+    AUTH_NOT_SET = "NONE"
     AUTH_PLAIN = "PLAIN"
 
 const AUTH_METHODS = {
@@ -24,5 +25,5 @@ proc encode*(auth: AuthMechanism, user = "guest", password = "guest", to: AsyncO
   of AUTH_PLAIN:
     let authstr: string = "\x00" & user & "\x00" & password
     await to.asyncWriteBytes(cast[ptr byte](unsafeAddr authstr), authstr.len())
-#  else:
-#    raise newException(AuthenticationError, $auth & " not supported")
+  else:
+    raise newException(AuthenticationError, $auth & " not supported")

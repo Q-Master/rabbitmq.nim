@@ -1,7 +1,6 @@
-import asyncdispatch
-import faststreams/[inputs, outputs]
 import ./mthd
 import ../data
+import ../streams
 
 type 
   ConfirmSelect* = ref object of Method
@@ -20,9 +19,9 @@ proc decode*(_: type[ConfirmSelect], encoded: InputStream): ConfirmSelect =
   let noWait = (bbuf and 0x01) != 0
   result = newConfirmSelect(noWait)
 
-proc encode*(self: ConfirmSelect, to: AsyncOutputStream) {.async.} =
+proc encode*(self: ConfirmSelect, to: OutputStream) =
   let bbuf = (if self.noWait: 0x01.uint8 else: 0x00.uint8)
-  discard await to.writeBigEndian8(bbuf)
+  to.writeBigEndian8(bbuf)
 
 #--------------- Confirm.SelectOk ---------------#
 
@@ -32,4 +31,4 @@ proc newConfirmSelectOk*(): ConfirmSelectOk =
 
 proc decode*(_: type[ConfirmSelectOk], encoded: InputStream): ConfirmSelectOk = newConfirmSelectOk()
 
-proc encode*(self: ConfirmSelectOk, to: AsyncOutputStream) {.async.} = discard
+proc encode*(self: ConfirmSelectOk, to: OutputStream) = discard
