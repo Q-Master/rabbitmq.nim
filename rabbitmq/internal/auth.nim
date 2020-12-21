@@ -14,16 +14,22 @@ const AUTH_METHODS = {
   "PLAIN": AUTH_PLAIN
 }.toTable()
 
+const REV_AUTH_METHODS = {
+  AUTH_PLAIN: "PLAIN"
+}.toTable()
+
 proc getAuthMechanism*(mechanisms: string): AuthMechanism =
   for mechanism in mechanisms.split({' ', ',', ';', '|'}):
     if AUTH_METHODS.hasKey(mechanism):
       return AUTH_METHODS[mechanism]
   raise newException(AuthenticationError, mechanisms)
   
-proc encode*(auth: AuthMechanism, user = "guest", password = "guest", to: AsyncOutputStream) {.async.} =
+proc getAuthMechanismName*(auth: AuthMechanism): string =
+  result = REV_AUTH_METHODS[auth]
+
+proc encodeAuth*(auth: AuthMechanism, user = "guest", password = "guest"): string =
   case auth
   of AUTH_PLAIN:
-    let authstr: string = "\x00" & user & "\x00" & password
-    await to.asyncWriteBytes(cast[ptr byte](unsafeAddr authstr), authstr.len())
+    result = "\x00" & user & "\x00" & password
   else:
     raise newException(AuthenticationError, $auth & " not supported")

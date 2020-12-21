@@ -17,3 +17,6 @@ let DEFAULT_PORTS* = {
   "amqp": 5672,
   "amqps": 5671,
 }.toTable()
+
+const PRODUCT* = "rabbitmq.nim"
+const PLATFORM* = "Nim " & NimVersion

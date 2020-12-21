@@ -1,485 +1,452 @@
-from ./methods/mthd import Method
-import ./methods/connection
+import tables
+import ./methods/access
+import ./methods/basic
 import ./methods/channel
+import ./methods/confirm
+import ./methods/connection
 import ./methods/exchange
 import ./methods/queue
-import ./methods/basic
 import ./methods/tx
-import ./methods/confirm
-import ./methods/access
 import ./exceptions
 import ./data
 import ./streams
+import ./spec
 
-export connection, channel, exchange, queue, basic, tx, confirm, access
-export Method
+export access.AccessMethod, basic.BasicMethod, channel.ChannelMethod, confirm.ConfirmMethod, connection.ConnectionMethod, exchange.ExchangeMethod, queue.QueueMethod
 
 const NO_SUCH_METHOD_STR = "No such method"
+const WRONG_METHOD_STR = "Wrong method"
+
+type
+  MethodVariants = enum
+    NONE = 0
+    CONNECTION_METHODS = connection.CONNECTION_METHODS
+    CHANNEL_METHODS = channel.CHANNEL_METHODS
+    ACCESS_METHODS = access.ACCESS_METHODS
+    EXCHANGE_METHODS = exchange.EXCHANGE_METHODS
+    QUEUE_METHODS = queue.QUEUE_METHODS
+    BASIC_METHODS = basic.BASIC_METHODS
+    CONFIRM_METHODS = confirm.CONFIRM_METHODS
+    TX_METHODS = tx.TX_METHODS
+  Method* = ref MethodObj
+  MethodObj* = object
+    name*: string
+    validResponses*: seq[uint16]
+    syncronous*: bool
+    case indexHi*: MethodVariants
+    of ACCESS_METHODS:
+      access*: AccessMethod
+    of BASIC_METHODS:
+      basic*: BasicMethod
+    of CHANNEL_METHODS:
+      channel*: ChannelMethod
+    of CONFIRM_METHODS:
+      confirm*: ConfirmMethod
+    of CONNECTION_METHODS:
+      connection*: ConnectionMethod
+    of EXCHANGE_METHODS:
+      exchange*: ExchangeMethod
+    of QUEUE_METHODS:
+      queue*: QueueMethod
+    of TX_METHODS:
+      tx*: TxMethod
+    else:
+      discard
+
+proc newMethod(index: uint32): (uint16, Method) =
+  let (indexHi, indexLo) = uint32touints16(index)
+  case MethodVariants(indexHi)
+  of ACCESS_METHODS:
+    result = (indexLo, Method(indexHi: ACCESS_METHODS))
+  of BASIC_METHODS:
+    result = (indexLo, Method(indexHi: BASIC_METHODS))
+  of CHANNEL_METHODS:
+    result = (indexLo, Method(indexHi: CHANNEL_METHODS))
+  of CONFIRM_METHODS:
+    result = (indexLo, Method(indexHi: CONFIRM_METHODS))
+  of CONNECTION_METHODS:
+    result = (indexLo, Method(indexHi: CONNECTION_METHODS))
+  of EXCHANGE_METHODS:
+    result = (indexLo, Method(indexHi: EXCHANGE_METHODS))
+  of QUEUE_METHODS:
+    result = (indexLo, Method(indexHi: QUEUE_METHODS))
+  of TX_METHODS:
+    result = (indexLo, Method(indexHi: TX_METHODS))
+  else:
+      raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
 proc decodeMethod*(encoded: InputStream): Method =
   let (_, methodId) = encoded.readBigEndianU32()
-  case methodId
-  of 0x000A000A:
-    result = ConnectionStart.decode(encoded)
-  of 0x000A000B:
-    result = ConnectionStartOk.decode(encoded)
-  of 0x000A0014:
-    result = ConnectionSecure.decode(encoded)
-  of 0x000A0015:
-    result = ConnectionSecureOk.decode(encoded)
-  of 0x000A001E:
-    result = ConnectionTune.decode(encoded)
-  of 0x000A001F:
-    result = ConnectionTuneOk.decode(encoded)
-  of 0x000A0028:
-    result = ConnectionOpen.decode(encoded)
-  of 0x000A0029:
-    result = ConnectionOpenOk.decode(encoded)
-  of 0x000A0032:
-    result = ConnectionClose.decode(encoded)
-  of 0x000A0033:
-    result = ConnectionCloseOk.decode(encoded)
-  of 0x000A003C:
-    result = ConnectionBlocked.decode(encoded)
-  of 0x000A003D:
-    result = ConnectionUnblocked.decode(encoded)
-  of 0x0014000A:
-    result = ChannelOpen.decode(encoded)
-  of 0x0014000B:
-    result = ChannelOpenOk.decode(encoded)
-  of 0x00140014:
-    result = ChannelFlow.decode(encoded)
-  of 0x00140015:
-    result = ChannelFlowOk.decode(encoded)
-  of 0x00140028:
-    result = ChannelClose.decode(encoded)
-  of 0x00140029:
-    result = ChannelCloseOk.decode(encoded)
-  of 0x001E000A:
-    result = AccessRequest.decode(encoded)
-  of 0x001E000B:
-    result = AccessRequestOk.decode(encoded)
-  of 0x0028000A:
-    result = ExchangeDeclare.decode(encoded)
-  of 0x0028000B:
-    result = ExchangeDeclareOk.decode(encoded)
-  of 0x00280014:
-    result = ExchangeDelete.decode(encoded)
-  of 0x00280015:
-    result = ExchangeDeleteOk.decode(encoded)
-  of 0x0028001E:
-    result = ExchangeBind.decode(encoded)
-  of 0x0028001F:
-    result = ExchangeBindOk.decode(encoded)
-  of 0x00280028:
-    result = ExchangeUnbind.decode(encoded)
-  of 0x00280033:
-    result = ExchangeUnbindOk.decode(encoded)
-  of 0x0032000A:
-    result = QueueDeclare.decode(encoded)
-  of 0x0032000B:
-    result = QueueDeclareOk.decode(encoded)
-  of 0x00320014:
-    result = QueueBind.decode(encoded)
-  of 0x00320015:
-    result = QueueBindOk.decode(encoded)
-  of 0x0032001E:
-    result = QueuePurge.decode(encoded)
-  of 0x0032001F:
-    result = QueuePurgeOk.decode(encoded)
-  of 0x00320028:
-    result = QueueDelete.decode(encoded)
-  of 0x00320029:
-    result = QueueDeleteOk.decode(encoded)
-  of 0x00320032:
-    result = QueueUnbind.decode(encoded)
-  of 0x00320033:
-    result = QueueUnbindOk.decode(encoded)
-  of 0x003C000A:
-    result = BasicQos.decode(encoded)
-  of 0x003C000B:
-    result = BasicQosOk.decode(encoded)
-  of 0x003C0014:
-    result = BasicConsume.decode(encoded)
-  of 0x003C0015:
-    result = BasicConsumeOk.decode(encoded)
-  of 0x003C001E:
-    result = BasicCancel.decode(encoded)
-  of 0x003C001F:
-    result = BasicCancelOk.decode(encoded)
-  of 0x003C0028:
-    result = BasicPublish.decode(encoded)
-  of 0x003C0032:
-    result = BasicReturn.decode(encoded)
-  of 0x003C003C:
-    result = BasicDeliver.decode(encoded)
-  of 0x003C0046:
-    result = BasicGet.decode(encoded)
-  of 0x003C0047:
-    result = BasicGetOk.decode(encoded)
-  of 0x003C0048:
-    result = BasicGetEmpty.decode(encoded)
-  of 0x003C0050:
-    result = BasicAck.decode(encoded)
-  of 0x003C005A:
-    result = BasicReject.decode(encoded)
-  of 0x003C0064:
-    result = BasicRecoverAsync.decode(encoded)
-  of 0x003C006E:
-    result = BasicRecover.decode(encoded)
-  of 0x003C006F:
-    result = BasicRecoverOk.decode(encoded)
-  of 0x003C0078:
-    result = BasicNack.decode(encoded)
-  of 0x005A000A:
-    result = TxSelect.decode(encoded)
-  of 0x005A000B:
-    result = TxSelectOk.decode(encoded)
-  of 0x005A0014:
-    result = TxCommit.decode(encoded)
-  of 0x005A0015:
-    result = TxCommitOk.decode(encoded)
-  of 0x005A001E:
-    result = TxRollback.decode(encoded)
-  of 0x005A001F:
-    result = TxRollbackOk.decode(encoded)
-  of 0x0055000A:
-    result = ConfirmSelect.decode(encoded)
-  of 0x0055000B:
-    result = ConfirmSelectOk.decode(encoded)
+  let (submethodId, meth) = newMethod(methodId)
+  result = meth
+  case meth.indexHi
+  of ACCESS_METHODS:
+    (meth.syncronous, meth.validResponses, meth.access) = AccessMethod.decode(AccessVariants(submethodId), encoded)
+  of BASIC_METHODS:
+    (meth.syncronous, meth.validResponses, meth.basic) = BasicMethod.decode(BasicVariants(submethodId), encoded)
+  of CHANNEL_METHODS:
+    (meth.syncronous, meth.validResponses, meth.channel) = ChannelMethod.decode(ChannelVariants(submethodId), encoded)
+  of CONFIRM_METHODS:
+    (meth.syncronous, meth.validResponses, meth.confirm) = ConfirmMethod.decode(ConfirmVariants(submethodId), encoded)
+  of CONNECTION_METHODS:
+    (meth.syncronous, meth.validResponses, meth.connection) = ConnectionMethod.decode(ConnectionVariants(submethodId), encoded)
+  of EXCHANGE_METHODS:
+    (meth.syncronous, meth.validResponses, meth.exchange) = ExchangeMethod.decode(ExchangeVariants(submethodId), encoded)
+  of QUEUE_METHODS:
+    (meth.syncronous, meth.validResponses, meth.queue) = QueueMethod.decode(QueueVariants(submethodId), encoded)
+  of TX_METHODS:
+    (meth.syncronous, meth.validResponses, meth.tx) = TxMethod.decode(TxVariants(submethodId), encoded)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
-proc encodeMethod*(m: Method, to: OutputStream) =
-  case m.index
-  of 0x000A000A:
-    cast[ConnectionStart](m).encodeMethod(to)
-  of 0x000A000B:
-    cast[ConnectionStartOk](m).encodeMethod(to)
-  of 0x000A0014:
-    cast[ConnectionSecure](m).encodeMethod(to)
-  of 0x000A0015:
-    cast[ConnectionSecureOk](m).encodeMethod(to)
-  of 0x000A001E:
-    cast[ConnectionTune](m).encodeMethod(to)
-  of 0x000A001F:
-    cast[ConnectionTuneOk](m).encodeMethod(to)
-  of 0x000A0028:
-    cast[ConnectionOpen](m).encodeMethod(to)
-  of 0x000A0029:
-    cast[ConnectionOpenOk](m).encodeMethod(to)
-  of 0x000A0032:
-    cast[ConnectionClose](m).encodeMethod(to)
-  of 0x000A0033:
-    cast[ConnectionCloseOk](m).encodeMethod(to)
-  of 0x000A003C:
-    cast[ConnectionBlocked](m).encodeMethod(to)
-  of 0x000A003D:
-    cast[ConnectionUnblocked](m).encodeMethod(to)
-  of 0x0014000A:
-    cast[ChannelOpen](m).encodeMethod(to)
-  of 0x0014000B:
-    cast[ChannelOpenOk](m).encodeMethod(to)
-  of 0x00140014:
-    cast[ChannelFlow](m).encodeMethod(to)
-  of 0x00140015:
-    cast[ChannelFlowOk](m).encodeMethod(to)
-  of 0x00140028:
-    cast[ChannelClose](m).encodeMethod(to)
-  of 0x00140029:
-    cast[ChannelCloseOk](m).encodeMethod(to)
-  of 0x001E000A:
-    cast[AccessRequest](m).encodeMethod(to)
-  of 0x001E000B:
-    cast[AccessRequestOk](m).encodeMethod(to)
-  of 0x0028000A:
-    cast[ExchangeDeclare](m).encodeMethod(to)
-  of 0x0028000B:
-    cast[ExchangeDeclareOk](m).encodeMethod(to)
-  of 0x00280014:
-    cast[ExchangeDelete](m).encodeMethod(to)
-  of 0x00280015:
-    cast[ExchangeDeleteOk](m).encodeMethod(to)
-  of 0x0028001E:
-    cast[ExchangeBind](m).encodeMethod(to)
-  of 0x0028001F:
-    cast[ExchangeBindOk](m).encodeMethod(to)
-  of 0x00280028:
-    cast[ExchangeUnbind](m).encodeMethod(to)
-  of 0x00280033:
-    cast[ExchangeUnbindOk](m).encodeMethod(to)
-  of 0x0032000A:
-    cast[QueueDeclare](m).encodeMethod(to)
-  of 0x0032000B:
-    cast[QueueDeclareOk](m).encodeMethod(to)
-  of 0x00320014:
-    cast[QueueBind](m).encodeMethod(to)
-  of 0x00320015:
-    cast[QueueBindOk](m).encodeMethod(to)
-  of 0x0032001E:
-    cast[QueuePurge](m).encodeMethod(to)
-  of 0x0032001F:
-    cast[QueuePurgeOk](m).encodeMethod(to)
-  of 0x00320028:
-    cast[QueueDelete](m).encodeMethod(to)
-  of 0x00320029:
-    cast[QueueDeleteOk](m).encodeMethod(to)
-  of 0x00320032:
-    cast[QueueUnbind](m).encodeMethod(to)
-  of 0x00320033:
-    cast[QueueUnbindOk](m).encodeMethod(to)
-  of 0x003C000A:
-    cast[BasicQos](m).encodeMethod(to)
-  of 0x003C000B:
-    cast[BasicQosOk](m).encodeMethod(to)
-  of 0x003C0014:
-    cast[BasicConsume](m).encodeMethod(to)
-  of 0x003C0015:
-    cast[BasicConsumeOk](m).encodeMethod(to)
-  of 0x003C001E:
-    cast[BasicCancel](m).encodeMethod(to)
-  of 0x003C001F:
-    cast[BasicCancelOk](m).encodeMethod(to)
-  of 0x003C0028:
-    cast[BasicPublish](m).encodeMethod(to)
-  of 0x003C0032:
-    cast[BasicReturn](m).encodeMethod(to)
-  of 0x003C003C:
-    cast[BasicDeliver](m).encodeMethod(to)
-  of 0x003C0046:
-    cast[BasicGet](m).encodeMethod(to)
-  of 0x003C0047:
-    cast[BasicGetOk](m).encodeMethod(to)
-  of 0x003C0048:
-    cast[BasicGetEmpty](m).encodeMethod(to)
-  of 0x003C0050:
-    cast[BasicAck](m).encodeMethod(to)
-  of 0x003C005A:
-    cast[BasicReject](m).encodeMethod(to)
-  of 0x003C0064:
-    cast[BasicRecoverAsync](m).encodeMethod(to)
-  of 0x003C006E:
-    cast[BasicRecover](m).encodeMethod(to)
-  of 0x003C006F:
-    cast[BasicRecoverOk](m).encodeMethod(to)
-  of 0x003C0078:
-    cast[BasicNack](m).encodeMethod(to)
-  of 0x005A000A:
-    cast[TxSelect](m).encodeMethod(to)
-  of 0x005A000B:
-    cast[TxSelectOk](m).encodeMethod(to)
-  of 0x005A0014:
-    cast[TxCommit](m).encodeMethod(to)
-  of 0x005A0015:
-    cast[TxCommitOk](m).encodeMethod(to)
-  of 0x005A001E:
-    cast[TxRollback](m).encodeMethod(to)
-  of 0x005A001F:
-    cast[TxRollbackOk](m).encodeMethod(to)
-  of 0x0055000A:
-    cast[ConfirmSelect](m).encodeMethod(to)
-  of 0x0055000B:
-    cast[ConfirmSelectOk](m).encodeMethod(to)
+template encodeIndex(to: OutputStream, idxHi: uint16, idxLo: uint16) =
+  let idx = uints16touint32(idxHi, idxLo)
+  to.writeBigEndian32(idx)
+
+proc encodeMethod*(to: OutputStream, m: Method) =
+  case m.indexHi
+  of ACCESS_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.access.indexLo).uint16)
+    to.encode(m.access)
+  of BASIC_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.basic.indexLo).uint16)
+    to.encode(m.basic)
+  of CHANNEL_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.channel.indexLo).uint16)
+    to.encode(m.channel)
+  of CONFIRM_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.confirm.indexLo).uint16)
+    to.encode(m.confirm)
+  of CONNECTION_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.connection.indexLo).uint16)
+    to.encode(m.connection)
+  of EXCHANGE_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.exchange.indexLo).uint16)
+    to.encode(m.exchange)
+  of QUEUE_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.queue.indexLo).uint16)
+    to.encode(m.queue)
+  of TX_METHODS:
+    to.encodeIndex(ord(m.indexHi).uint16, ord(m.tx.indexLo).uint16)
+    to.encode(m.tx)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
-const WRONG_METHOD_STR = "Wrong method"
+#----------------------- Access -----------------------#
 
-proc encodeMethod*[T: Method](m: T, to: OutputStream) =
-  to.writeBigEndian32(m.index)
-  case m.index
-  of 0x000A000A:
-    if m is not ConnectionStart:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A000B:
-    if m is not ConnectionStartOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0014:
-    if m is not ConnectionSecure:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0015:
-    if m is not ConnectionSecureOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A001E:
-    if m is not ConnectionTune:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A001F:
-    if m is not ConnectionTuneOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0028:
-    if m is not ConnectionOpen:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0029:
-    if m is not ConnectionOpenOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0032:
-    if m is not ConnectionClose:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A0033:
-    if m is not ConnectionCloseOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A003C:
-    if m is not ConnectionBlocked:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x000A003D:
-    if m is not ConnectionUnblocked:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0014000A:
-    if m is not ChannelOpen:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0014000B:
-    if m is not ChannelOpenOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00140014:
-    if m is not ChannelFlow:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00140015:
-    if m is not ChannelFlowOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00140028:
-    if m is not ChannelClose:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00140029:
-    if m is not ChannelCloseOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x001E000A:
-    if m is not AccessRequest:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x001E000B:
-    if m is not AccessRequestOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0028000A:
-    if m is not ExchangeDeclare:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0028000B:
-    if m is not ExchangeDeclareOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00280014:
-    if m is not ExchangeDelete:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00280015:
-    if m is not ExchangeDeleteOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0028001E:
-    if m is not ExchangeBind:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0028001F:
-    if m is not ExchangeBindOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00280028:
-    if m is not ExchangeUnbind:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00280033:
-    if m is not ExchangeUnbindOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0032000A:
-    if m is not QueueDeclare:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0032000B:
-    if m is not QueueDeclareOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320014:
-    if m is not QueueBind:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320015:
-    if m is not QueueBindOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0032001E:
-    if m is not QueuePurge:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0032001F:
-    if m is not QueuePurgeOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320028:
-    if m is not QueueDelete:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320029:
-    if m is not QueueDeleteOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320032:
-    if m is not QueueUnbind:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x00320033:
-    if m is not QueueUnbindOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C000A:
-    if m is not BasicQos:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C000B:
-    if m is not BasicQosOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0014:
-    if m is not BasicConsume:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0015:
-    if m is not BasicConsumeOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C001E:
-    if m is not BasicCancel:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C001F:
-    if m is not BasicCancelOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0028:
-    if m is not BasicPublish:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0032:
-    if m is not BasicReturn:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C003C:
-    if m is not BasicDeliver:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0046:
-    if m is not BasicGet:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0047:
-    if m is not BasicGetOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0048:
-    if m is not BasicGetEmpty:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0050:
-    if m is not BasicAck:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C005A:
-    if m is not BasicReject:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0064:
-    if m is not BasicRecoverAsync:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C006E:
-    if m is not BasicRecover:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C006F:
-    if m is not BasicRecoverOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x003C0078:
-    if m is not BasicNack:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A000A:
-    if m is not TxSelect:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A000B:
-    if m is not TxSelectOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A0014:
-    if m is not TxCommit:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A0015:
-    if m is not TxCommitOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A001E:
-    if m is not TxRollback:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x005A001F:
-    if m is not TxRollbackOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0055000A:
-    if m is not ConfirmSelect:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  of 0x0055000B:
-    if m is not ConfirmSelectOk:
-      raise newException(InvalidFrameMethodException, WRONG_METHOD_STR)
-  else:
-    raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
-  m.encode(to)
+proc newAccessRequest*(realm="/data", exclusive=false, passive=true, active=true, write=true, read=true): Method =
+  result = Method(indexHi: ACCESS_METHODS)
+  (result.syncronous, result.validResponses, result.access) = access.newAccessRequest(realm, exclusive, passive, active, write, read)
+
+proc newAccessRequestOk*(ticket = 1.uint16): Method =
+  result = Method(indexHi: ACCESS_METHODS)
+  (result.syncronous, result.validResponses, result.access) = access.newAccessRequestOk(ticket)
+
+#----------------------- Basic -----------------------#
+
+proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicQos(prefetchSize, prefetchCount, globalQos)
+
+proc newBasicQosOk*(): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicQosOk()
+
+proc newBasicConsume*(
+  ticket=0.uint16, 
+  queue="", 
+  consumerTag="", 
+  noLocal=false, 
+  noAck=false, 
+  exclusive=false, 
+  noWait=false, 
+  arguments: TableRef[string, DataTable] = nil): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, arguments)
+
+proc newBasicConsumeOk*(consumerTag=""): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicConsumeOk(consumerTag)
+
+proc newBasicCancel*(consumerTag="", noWait=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicCancel(consumerTag, noWait)
+
+proc newBasicCancelOk*(consumerTag=""): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicCancelOk(consumerTag)
+
+proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=false, immediate=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
+
+proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey=""): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicReturn(replyCode, replyText, exchange, routingKey)
+
+proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, exchange="", routingKey=""): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
+
+proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicGet(ticket, queue, noAck)
+
+proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routingKey="", messageCount=0.uint32): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
+
+proc newBasicGetEmpty*(clusterId=""): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicGetEmpty(clusterId)
+
+proc newBasicAck*(deliveryTag=0.uint64, multiple=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicAck(deliveryTag, multiple)
+
+proc newBasicReject*(deliveryTag=0.uint64, requeue=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicReject(deliveryTag, requeue)
+
+proc newBasicRecoverAsync*(requeue=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicRecoverAsync(requeue)
+
+proc newBasicRecover*(requeue=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicRecover(requeue)
+
+proc newBasicRecoverOk*(): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicRecoverOk()
+
+proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): Method =
+  result = Method(indexHi: BASIC_METHODS)
+  (result.syncronous, result.validResponses, result.basic) = basic.newBasicNack(deliveryTag, multiple, requeue)
+
+#----------------------- Channel -----------------------#
+
+proc newChannelOpen*(outOfBand = ""): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelOpen(outOfBand)
+
+proc newChannelOpenOk*(channelId = ""): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelOpenOk(channelId)
+
+proc newChannelFlow*(active = false): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelFlow(active)
+
+proc newChannelFlowOk*(active = false): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelFlowOk(active)
+
+proc newChannelClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 = 0, methodId: uint16 = 0): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelClose(replyCode, replyText, classId, methodId)
+
+proc newChannelCloseOk*(): Method =
+  result = Method(indexHi: CHANNEL_METHODS)
+  (result.syncronous, result.validResponses, result.channel) = channel.newChannelCloseOk()
+
+#----------------------- Confirm -----------------------#
+
+proc newConfirmSelect*(noWait=false): Method =
+  result = Method(indexHi: CONFIRM_METHODS)
+  (result.syncronous, result.validResponses, result.confirm) = confirm.newConfirmSelect(noWait)
+
+proc newConfirmSelectOk*(): Method =
+  result = Method(indexHi: CONFIRM_METHODS)
+  (result.syncronous, result.validResponses, result.confirm) = confirm.newConfirmSelectOk()
+
+#----------------------- Connection -----------------------#
+
+proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], properties: TableRef[string, DataTable]=nil, mechanisms="PLAIN", locales="en_US"): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionStart(major, minor, properties, mechanisms, locales)
+
+proc newConnectionStartOk*(clientProps: TableRef[string, DataTable] = nil, mechanisms="PLAIN", response="", locales="en_US"): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionStartOk(clientProps, mechanisms, response, locales)
+
+proc newConnectionSecure*(challenge: string = ""): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionSecure(challenge)
+
+proc newConnectionSecureOk*(response: string = ""): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionSecureOk(response)
+
+proc newConnectionTune*(channelMax: uint16 = 0, frameMax: uint32 = 0, heartbeat: uint16 = 0): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionTune(channelMax, frameMax, heartbeat)
+
+proc newConnectionTuneOk*(channelMax: uint16 = 0, frameMax: uint32 = 0, heartbeat: uint16 = 0): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionTuneOk(channelMax, frameMax, heartbeat)
+
+proc newConnectionOpen*(virtualHost = "/", capabilities = "", insist = false): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionOpen(virtualHost, capabilities, insist)
+
+proc newConnectionOpenOk*(knownHosts = ""): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionOpenOk(knownHosts)
+
+proc newConnectionClose*(replyCode: uint16 = 0, replyText = "", classId: uint16 = 0, methodId: uint16 = 0): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionClose(replyCode, replyText, classId, methodId)
+
+proc newConnectionCloseOk*(): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionCloseOk()
+
+proc newConnectionBlocked*(reason = ""): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionBlocked(reason)
+
+proc newConnectionUnblocked*(): Method =
+  result = Method(indexHi: CONNECTION_METHODS)
+  (result.syncronous, result.validResponses, result.connection) = connection.newConnectionUnblocked()
+
+#----------------------- Exchange -----------------------#
+
+proc newExchangeDeclare*(
+  ticket = 0.uint16, 
+  exchangeName="", 
+  etype="direct", 
+  passive=false, 
+  durable=false, 
+  autoDelete=false, 
+  internal=false, 
+  noWait=false, 
+  arguments: TableRef[string, DataTable]=nil): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeDeclare(ticket, exchangeName, etype, passive, durable, autoDelete, internal, noWait, arguments)
+proc newExchangeDeclareOk*(): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeDeclareOk()
+
+proc newExchangeDelete*(ticket = 0.uint16, exchangeName = "", ifUnused = false, noWait = false): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeDelete(ticket, exchangeName, ifUnused, noWait)
+
+proc newExchangeDeleteOk*(): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeDeleteOk()
+
+proc newExchangeBind*(
+  ticket = 0.uint16, 
+  destination = "", 
+  source = "", 
+  routingKey = "", 
+  noWait=false, 
+  arguments: TableRef[string, DataTable] = nil): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeBind(ticket, destination, source, routingKey, noWait, arguments)
+
+proc newExchangeBindOk*(): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeBindOk()
+
+proc newExchangeUnbind*(
+  ticket = 0.uint16, 
+  destination = "", 
+  source = "", 
+  routingKey = "", 
+  noWait=false, 
+  arguments: TableRef[string, DataTable] = nil): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeUnbind(ticket, destination, source, routingKey, noWait, arguments)
+
+proc newExchangeUnbindOk*(): Method =
+  result = Method(indexHi: EXCHANGE_METHODS)
+  (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeUnbindOk()
+
+#----------------------- Queue -----------------------#
+
+proc newQueueDeclare*(
+  ticket = 0.uint16, 
+  queueName="", 
+  passive=false, 
+  durable=false, 
+  exclusive=false,
+  autoDelete=false, 
+  noWait=false, 
+  arguments: TableRef[string, DataTable]=nil): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueDeclare(ticket, queueName, passive, durable, exclusive, autoDelete, noWait, arguments)
+
+proc newQueueDeclareOk*(queueName="", messageCount=0.uint32, consumerCount=0.uint32): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueDeclareOk(queueName, messageCount, consumerCount)
+
+proc newQueueBind*(
+  ticket = 0.uint16, 
+  queueName = "", 
+  bQueue = "", 
+  routingKey = "", 
+  noWait=false, 
+  arguments: TableRef[string, DataTable] = nil): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueBind(ticket, queueName, bQueue, routingKey, noWait, arguments)
+
+proc newQueueBindOk*(): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueBindOk()
+
+proc newQueuePurge*(ticket = 0.uint16, queueName="", noWait=false): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueuePurge(ticket, queueName, noWait)
+
+proc newQueuePurgeOk*(messageCount = 0.uint32): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueuePurgeOk(messageCount)
+
+proc newQueueDelete*(ticket = 0.uint16, queueName="", ifUnused=false, ifEmpty=false, noWait=false): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueDelete(ticket, queueName, ifUnused, ifEmpty, noWait)
+
+proc newQueueDeleteOk*(messageCount = 0.uint32): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueDeleteOk()
+
+proc newQueueUnbind*(
+  ticket = 0.uint16, 
+  queueName = "", 
+  bQueue = "", 
+  routingKey = "", 
+  arguments: TableRef[string, DataTable] = nil): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueUnbind(ticket, queueName, bQueue, routingKey, arguments)
+
+proc newQueueUnbindOk*(): Method =
+  result = Method(indexHi: QUEUE_METHODS)
+  (result.syncronous, result.validResponses, result.queue) = queue.newQueueUnbindOk()
+
+#----------------------- TX -----------------------#
+
+proc newTxSelect*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxSelect()
+
+proc newTxSelectOk*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxSelectOk()
+
+proc newTxCommit*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxCommit()
+
+proc newTxCommitOk*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxCommitOk()
+
+proc newTxRollback*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxRollback()
+
+proc newTxRollbackOk*(): Method =
+  result = Method(indexHi: TX_METHODS)
+  (result.syncronous, result.validResponses, result.tx) = tx.newTxRollbackOk()

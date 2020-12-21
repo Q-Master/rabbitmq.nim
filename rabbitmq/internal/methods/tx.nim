@@ -1,70 +1,132 @@
-import ./mthd
+import ./submethods
 import ../streams
 
-type 
-  TxSelect* = ref object of Method
-  TxSelectOk* = ref object of Method
-  TxCommit* = ref object of Method
-  TxCommitOk* = ref object of Method
-  TxRollback* = ref object of Method
-  TxRollbackOk* = ref object of Method
+const TX_METHODS* = 0x005A.uint16
+const TX_SELECT_METHOD_ID = 0x005A000A.uint32
+const TX_SELECT_OK_METHOD_ID = 0x005A000B.uint32
+const TX_COMMIT_METHOD_ID = 0x005A0014.uint32
+const TX_COMMIT_OK_METHOD_ID = 0x005A0015.uint32
+const TX_ROLLBACK_METHOD_ID = 0x005A001E.uint32
+const TX_ROLLBACK_OK_METHOD_ID = 0x005A001F.uint32
 
+type
+  TxVariants* = enum
+    NONE = 0
+    TX_SELECT_METHOD = (TX_SELECT_METHOD_ID and 0x0000FFFF).uint16
+    TX_SELECT_OK_METHOD = (TX_SELECT_OK_METHOD_ID and 0x0000FFFF).uint16
+    TX_COMMIT_METHOD = (TX_COMMIT_METHOD_ID and 0x0000FFFF).uint16
+    TX_COMMIT_OK_METHOD = (TX_COMMIT_OK_METHOD_ID and 0x0000FFFF).uint16
+    TX_ROLLBACK_METHOD = (TX_ROLLBACK_METHOD_ID and 0x0000FFFF).uint16
+    TX_ROLLBACK_OK_METHOD = (TX_ROLLBACK_OK_METHOD_ID and 0x0000FFFF).uint16
+
+type 
+  TxMethod* = ref object of SubMethod
+    case indexLo*: TxVariants
+    of TX_SELECT_METHOD, TX_SELECT_OK_METHOD:
+      discard
+    of TX_COMMIT_METHOD, TX_COMMIT_OK_METHOD:
+      discard
+    of TX_ROLLBACK_METHOD, TX_ROLLBACK_OK_METHOD:
+      discard
+    else:
+      discard
+
+proc decodeTxSelect(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxSelect(to: OutputStream, data: TxMethod)
+proc decodeTxSelectOk(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxSelectOk(to: OutputStream, data: TxMethod)
+proc decodeTxCommit(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxCommit(to: OutputStream, data: TxMethod)
+proc decodeTxCommitOk(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxCommitOk(to: OutputStream, data: TxMethod)
+proc decodeTxRollback(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxRollback(to: OutputStream, data: TxMethod)
+proc decodeTxRollbackOk(encoded: InputStream): (bool, seq[uint16], TxMethod)
+proc encodeTxRollbackOk(to: OutputStream, data: TxMethod)
+
+proc decode*(_ : type[TxMethod], submethodId: TxVariants, encoded: InputStream): (bool, seq[uint16], TxMethod) =
+  case submethodId
+  of TX_SELECT_METHOD:
+    result = decodeTxSelect(encoded)
+  of TX_SELECT_OK_METHOD:
+    result = decodeTxSelectOk(encoded)
+  of TX_COMMIT_METHOD:
+    result = decodeTxCommit(encoded)
+  of TX_COMMIT_OK_METHOD:
+    result = decodeTxCommitOk(encoded)
+  of TX_ROLLBACK_METHOD:
+    result = decodeTxRollback(encoded)
+  of TX_ROLLBACK_OK_METHOD:
+    result = decodeTxRollbackOk(encoded)
+  else:
+      discard
+
+proc encode*(to: OutputStream, data: TxMethod) =
+  case data.indexLo
+  of TX_SELECT_METHOD:
+    to.encodeTxSelect(data)
+  of TX_SELECT_OK_METHOD:
+    to.encodeTxSelectOk(data)
+  of TX_COMMIT_METHOD:
+    to.encodeTxCommit(data)
+  of TX_COMMIT_OK_METHOD:
+    to.encodeTxCommitOk(data)
+  of TX_ROLLBACK_METHOD:
+    to.encodeTxRollback(data)
+  of TX_ROLLBACK_OK_METHOD:
+    to.encodeTxRollbackOk(data)
+  else:
+    discard
 #--------------- Tx.Select ---------------#
 
-proc newTxSelect*(): TxSelect =
-  result.new
-  result.initMethod(true, 0x005A000A)
+proc newTxSelect*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[ord(TX_SELECT_OK_METHOD).uint16], TxMethod(indexLo: TX_SELECT_METHOD))
 
-proc decode*(_: type[TxSelect], encoded: InputStream): TxSelect = newTxSelect()
+proc decodeTxSelect(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxSelect()
 
-proc encode*(self: TxSelect, to: OutputStream) = discard
+proc encodeTxSelect(to: OutputStream, data: TxMethod) = discard
 
 #--------------- Tx.SelectOk ---------------#
 
-proc newTxSelectOk*(): TxSelectOk =
-  result.new
-  result.initMethod(false, 0x005A000B)
+proc newTxSelectOk*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[], TxMethod(indexLo: TX_SELECT_OK_METHOD))
 
-proc decode*(_: type[TxSelectOk], encoded: InputStream): TxSelectOk = newTxSelectOk()
+proc decodeTxSelectOk(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxSelectOk()
 
-proc encode*(self: TxSelectOk, to: OutputStream) = discard
+proc encodeTxSelectOk(to: OutputStream, data: TxMethod) = discard
 
 #--------------- Tx.Commit ---------------#
 
-proc newTxCommit*(): TxCommit =
-  result.new
-  result.initMethod(true, 0x005A0014)
+proc newTxCommit*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[ord(TX_COMMIT_OK_METHOD).uint16], TxMethod(indexLo: TX_COMMIT_METHOD))
 
-proc decode*(_: type[TxCommit], encoded: InputStream): TxCommit = newTxCommit()
+proc decodeTxCommit(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxCommit()
 
-proc encode*(self: TxCommit, to: OutputStream) = discard
+proc encodeTxCommit(to: OutputStream, data: TxMethod) = discard
 
 #--------------- Tx.CommitOk ---------------#
 
-proc newTxCommitOk*(): TxCommitOk =
-  result.new
-  result.initMethod(false, 0x005A0015)
+proc newTxCommitOk*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[], TxMethod(indexLo: TX_COMMIT_OK_METHOD))
 
-proc decode*(_: type[TxCommitOk], encoded: InputStream): TxCommitOk = newTxCommitOk()
+proc decodeTxCommitOk(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxCommitOk()
 
-proc encode*(self: TxCommitOk, to: OutputStream) = discard
+proc encodeTxCommitOk(to: OutputStream, data: TxMethod) = discard
 
 #--------------- Tx.Rollback ---------------#
 
-proc newTxRollback*(): TxRollback =
-  result.new
-  result.initMethod(true, 0x005A001E)
+proc newTxRollback*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[ord(TX_ROLLBACK_OK_METHOD).uint16], TxMethod(indexLo: TX_ROLLBACK_METHOD))
 
-proc decode*(_: type[TxRollback], encoded: InputStream): TxRollback = newTxRollback()
+proc decodeTxRollback(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxRollback()
 
-proc encode*(self: TxRollback, to: OutputStream) = discard
+proc encodeTxRollback(to: OutputStream, data: TxMethod) = discard
 
 #--------------- Tx.RollbackOk ---------------#
 
-proc newTxRollbackOk*(): TxRollbackOk =
-  result.new
-  result.initMethod(false, 0x005A001F)
+proc newTxRollbackOk*(): (bool, seq[uint16], TxMethod) =
+  result = (true, @[], TxMethod(indexLo: TX_ROLLBACK_OK_METHOD))
 
-proc decode*(_: type[TxRollbackOk], encoded: InputStream): TxRollbackOk = newTxRollbackOk()
+proc decodeTxRollbackOk(encoded: InputStream): (bool, seq[uint16], TxMethod) = newTxRollbackOk()
 
-proc encode*(self: TxRollbackOk, to: OutputStream) = discard
+proc encodeTxRollbackOk(to: OutputStream, data: TxMethod) = discard

@@ -4,8 +4,8 @@ import tables
 import strutils
 import locks
 import net
-import faststreams/[inputs, outputs]
 import times
+import options
 import ./auth
 import ./async_socket_adapters
 import ./url
@@ -14,6 +14,8 @@ import ./data
 import ./methods
 import ./spec
 import ./frame
+import ./streams
+import ./exceptions
 
 type
   ConnectionState = enum
@@ -38,8 +40,6 @@ type
   AsyncConnection* = ref AsyncConnectionObj
   AsyncConnectionObj = object
     sock: AsyncSocket
-    inStream: AsyncInputStream
-    outStream: AsyncOutputStream
     inUse: bool
     started: bool
     state: ConnectionState
@@ -51,7 +51,7 @@ type
     lastChannelLock: Lock
     lastChannel {.guard: lastChannelLock.} : int
     hearbeatMonitoring: bool
-    heartbeatTimeout: int
+    heartbeatTimeout: uint16
     heartbeatLastReceived: Time
     auth: AuthMechanism
     connected: AsyncEvent
@@ -93,7 +93,8 @@ proc newConnectionInfo(
   ): ConnectionInfo
 proc newConnectionInfoWithURL(url: string): ConnectionInfo
 proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.}
-proc receiveFrame(conn: AsyncConnection): Future[Frame] {.async.}
+proc receiveFrame(conn: AsyncConnection): Future[Method] {.async.}
+proc rpc(conn: AsyncConnection, request: Method, waitResponce: bool = true): Future[Method] {.async.}
 
 proc newConnectionPool*(host: string, port: Port, maxConnections = 5): ConnectionPool =
   result.new()
@@ -185,31 +186,6 @@ proc newConnectionInfoWithURL(url: string): ConnectionInfo =
   )
 
 #[
-        # noinspection PyTypeChecker
-        self.connection_tune = await self.__rpc(
-            spec.Connection.StartOk(
-                client_properties=self._client_properties(
-                    **(client_properties or {}),
-                ),
-                mechanism=credentials.name,
-                response=credentials.value(self).marshal(),
-            ),
-        )  # type: spec.Connection.Tune
-
-        if self.heartbeat_timeout > 0:
-            self.connection_tune.heartbeat = self.heartbeat_timeout
-
-        await self.__rpc(
-            spec.Connection.TuneOk(
-                channel_max=self.connection_tune.channel_max,
-                frame_max=self.connection_tune.frame_max,
-                heartbeat=self.connection_tune.heartbeat,
-            ),
-            wait_response=False,
-        )
-
-        await self.__rpc(spec.Connection.Open(virtual_host=self.vhost))
-
         # noinspection PyAsyncCall
         self._reader_task = self.create_task(self.__reader())
 
@@ -225,31 +201,70 @@ proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.} =
   if not cInfo.sslCtx.isNil():
     cInfo.sslCtx.wrapSocket(result.sock)
   await result.sock.connect(cInfo.host, cInfo.port)
-  result.inStream = asyncSocketInput(result.sock)
-  result.outStream = asyncSocketOutput(result.sock)
   let pHeader = newProtocolHeader()
-  await pHeader.encodeFrame(result.outStream)
+  var outStream = newOutputStream()
+  pHeader.encodeFrame(outStream)
   let res: ConnectionStart = cast[ConnectionStart](await result.receiveFrame())
   result.heartbeatLastReceived = getTime()
   result.auth = getAuthMechanism(res.mechanisms)
   result.serverProps = res.properties
+  let connectionTune: ConnectionTune = cast[ConnectionTune](await result.rpc(
+    newConnectionStartOk(
+      clientProps = newClientProps(cInfo.connectionName), 
+      mechanisms=getAuthMechanismName(result.auth), 
+      response=encodeAuth(result.auth, cInfo.login, cInfo.password)
+    )
+  ))
+  if result.heartbeatTimeout > 0:
+    connectionTune.heartbeat = result.heartbeatTimeout
+  discard waitFor result.rpc(
+    newConnectionTuneOk(
+      connectionTune.channelMax, 
+      connectionTune.frameMax, 
+      connectionTune.heartbeat
+    ),
+    false
+  )
+  discard waitFor result.rpc(
+    newConnectionOpen(virtualHost=cInfo.vhost)
+  )
 
-
-proc receiveFrame(conn: AsyncConnection): Future[Frame] {.async.} =
-  var frameHeader: openArray[byte] = await conn.inStream.read(1)
-  if frameHeader[0] == 0x00:
-    raise newException(AMQPFrameError, await encoded.read())
-  frameHeader.add(await conn.inStream.read(6))
+proc receiveFrame(conn: AsyncConnection): Future[Method] {.async.} =
+  var frameHeader = await conn.sock.recv(1)
+  if frameHeader[0] == '\x00':
+    raise newException(AMQPFrameError, await conn.sock.recv(4096))
+  frameHeader.add(await conn.sock.recv(6))
   let startFrame = frameHeader.startsWith("AMQP")
   if not conn.started and startFrame:
-    raise newException(AMQPSyntaxError)
+    raise newException(AMQPSyntaxError, "Already started")
   else:
     conn.started = true
   if not startFrame:
-    let headerStream = unsafeMemoryInput(frameHeader)
-    let(_, _, fSize) = getFrameHeaderInfo(headerStream.s)
-    frameHeader.add(await conn.reader.read(fSize+1))
+    let headerStream = newInputStream(frameHeader)
+    let(_, _, fSize) = getFrameHeaderInfo(headerStream)
+    frameHeader.add(await conn.sock.recv(fSize.int+1))
     headerStream.close()
-  let frameStream = unsafeMemoryInput(frameHeader)
-  result = decodeFrame(frameStream.s, startFrame)
+  let frameStream = newInputStream(frameHeader)
+  let frame: Frame = decodeFrame(frameStream, startFrame)
   frameStream.close()
+  case frame.frameType
+  of ftMethod:
+    result = frame.meth
+  else:
+    # TODO Fix for other frames incl. dataframes
+    discard
+
+proc rpc(conn: AsyncConnection, request: Method, waitResponce: bool = true): Future[Method] {.async.} =
+  let stream = newOutputStream()
+  let frame: Frame = newMethod(0, request)
+  frame.encodeFrame(stream)
+  asyncCheck conn.sock.send(stream)
+  if not waitResponce:
+    return nil
+  let result = await conn.receiveFrame()
+  if result.syncronous and not result.index in request.validResponses:
+    raise newException(AMQPInternalError, "Wrong reply")
+  elif result.name == "Connection.Close":
+    await conn.close()
+    checkCloseReason(cast[ConnectionClose](result))
+

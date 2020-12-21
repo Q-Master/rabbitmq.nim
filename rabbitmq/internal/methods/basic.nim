@@ -1,106 +1,260 @@
 import tables
-import ./mthd
 import ../data
 import ../streams
+import ./submethods
+
+const BASIC_METHODS* = 0x003C.uint16
+const BASIC_QOS_METHOD_ID = 0x003C000A.uint32
+const BASIC_QOS_OK_METHOD_ID = 0x003C000B.uint32
+const BASIC_CONSUME_METHOD_ID = 0x003C0014.uint32
+const BASIC_CONSUME_OK_METHOD_ID = 0x003C0015.uint32
+const BASIC_CANCEL_METHOD_ID = 0x003C001E.uint32
+const BASIC_CANCEL_OK_METHOD_ID = 0x003C001F.uint32
+const BASIC_PUBLISH_METHOD_ID = 0x003C0028.uint32
+const BASIC_RETURN_METHOD_ID = 0x003C0032.uint32
+const BASIC_DELIVER_METHOD_ID = 0x003C003C.uint32
+const BASIC_GET_METHOD_ID = 0x003C0046.uint32
+const BASIC_GET_OK_METHOD_ID = 0x003C0047.uint32
+const BASIC_GET_EMPTY_METHOD_ID = 0x003C0048.uint32
+const BASIC_ACK_METHOD_ID = 0x003C0050.uint32
+const BASIC_REJECT_METHOD_ID = 0x003C005A.uint32
+const BASIC_RECOVER_ASYNC_METHOD_ID = 0x003C0064.uint32
+const BASIC_RECOVER_METHOD_ID = 0x003C006E.uint32
+const BASIC_RECOVER_OK_METHOD_ID = 0x003C006F.uint32
+const BASIC_NACK_METHOD_ID = 0x003C0078.uint32
+
+type
+  BasicVariants* = enum
+    NONE = 0
+    BASIC_QOS_METHOD = (BASIC_QOS_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_QOS_OK_METHOD = (BASIC_QOS_OK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_CONSUME_METHOD = (BASIC_CONSUME_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_CONSUME_OK_METHOD = (BASIC_CONSUME_OK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_CANCEL_METHOD = (BASIC_CANCEL_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_CANCEL_OK_METHOD = (BASIC_CANCEL_OK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_PUBLISH_METHOD = (BASIC_PUBLISH_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_RETURN_METHOD = (BASIC_RETURN_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_DELIVER_METHOD = (BASIC_DELIVER_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_GET_METHOD = (BASIC_GET_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_GET_OK_METHOD = (BASIC_GET_OK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_GET_EMPTY_METHOD = (BASIC_GET_EMPTY_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_ACK_METHOD = (BASIC_ACK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_REJECT_METHOD = (BASIC_REJECT_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_RECOVER_ASYNC_METHOD = (BASIC_RECOVER_ASYNC_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_RECOVER_METHOD = (BASIC_RECOVER_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_RECOVER_OK_METHOD = (BASIC_RECOVER_OK_METHOD_ID and 0x0000FFFF).uint16
+    BASIC_NACK_METHOD = (BASIC_NACK_METHOD_ID and 0x0000FFFF).uint16
+
 
 type 
-  BasicQos* = ref object of Method
-    prefetchSize: uint32
-    prefetchCount: uint16
-    globalQos: bool
-  BasicQosOk* = ref object of Method
-  BasicConsume* = ref object of Method
-    ticket: uint16
-    queue: string
-    consumerTag: string
-    noLocal: bool
-    noAck: bool
-    exclusive: bool
-    noWait: bool
-    arguments: TableRef[string, DataTable]
-  BasicConsumeOk* = ref object of Method
-    consumerTag: string
-  BasicCancel* = ref object of Method
-    consumerTag: string
-    noWait: bool
-  BasicCancelOk* = ref object of Method
-    consumerTag: string
-  BasicPublish* = ref object of Method
-    ticket: uint16
-    exchange: string
-    routingKey: string
-    mandatory: bool
-    immediate: bool
-  BasicReturn* = ref object of Method
-    replyCode: uint16
-    replyText: string
-    exchange: string
-    routingKey: string
-  BasicDeliver* = ref object of Method
-    consumerTag: string
-    deliveryTag: uint64
-    redelivered: bool
-    exchange: string
-    routingKey: string
-  BasicGet* = ref object of Method
-    ticket: uint16
-    queue: string
-    noAck: bool
-  BasicGetOk* = ref object of Method
-    deliveryTag: uint64
-    redelivered: bool
-    exchange: string
-    routingKey: string
-    messageCount: uint32
-  BasicGetEmpty* = ref object of Method
-    clusterId: string
-  BasicAck* = ref object of Method
-    deliveryTag: uint64
-    multiple: bool
-  BasicReject* = ref object of Method
-    deliveryTag: uint64
-    requeue: bool
-  BasicRecoverAsync* = ref object of Method
-    requeue: bool
-  BasicRecover* = ref object of Method
-    requeue: bool
-  BasicRecoverOk* = ref object of Method
-  BasicNack* = ref object of Method
-    deliveryTag: uint64
-    multiple: bool
-    requeue: bool
+  BasicMethod* = ref object of SubMethod
+    ticket*: uint16
+    exchange*: string
+    consumerTag*: string
+    routingKey*: string
+    noWait*: bool
+    queue*: string
+    noAck*: bool
+    deliveryTag*: uint64
+    redelivered*: bool
+    requeue*: bool
+    multiple*: bool
+    case indexLo*: BasicVariants
+    of NONE:
+      discard
+    of BASIC_QOS_METHOD:
+      prefetchSize*: uint32
+      prefetchCount*: uint16
+      globalQos*: bool
+    of BASIC_CONSUME_METHOD:
+      noLocal*: bool
+      exclusive*: bool
+      arguments*: TableRef[string, DataTable]
+    of BASIC_PUBLISH_METHOD:
+      mandatory*: bool
+      immediate*: bool
+    of BASIC_RETURN_METHOD:
+      replyCode*: uint16
+      replyText*: string
+    of BASIC_GET_OK_METHOD:
+      messageCount*: uint32
+    of BASIC_GET_EMPTY_METHOD:
+      clusterId*: string
+    of BASIC_QOS_OK_METHOD:
+      discard
+    of BASIC_CONSUME_OK_METHOD:
+      discard
+    of BASIC_CANCEL_METHOD:
+      discard
+    of BASIC_CANCEL_OK_METHOD:
+      discard
+    of BASIC_DELIVER_METHOD:
+      discard
+    of BASIC_GET_METHOD:
+      discard
+    of BASIC_ACK_METHOD:
+      discard
+    of BASIC_REJECT_METHOD:
+      discard
+    of BASIC_RECOVER_ASYNC_METHOD:
+      discard
+    of BASIC_RECOVER_METHOD:
+      discard
+    of BASIC_RECOVER_OK_METHOD:
+      discard
+    of BASIC_NACK_METHOD:
+      discard
+
+proc decodeBasicQos(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicQos(to: OutputStream, data: BasicMethod)
+proc decodeBasicQosOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicQosOk(to: OutputStream, data: BasicMethod)
+proc decodeBasicConsume(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicConsume(to: OutputStream, data: BasicMethod)
+proc decodeBasicConsumeOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicConsumeOk(to: OutputStream, data: BasicMethod)
+proc decodeBasicCancel(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicCancel(to: OutputStream, data: BasicMethod)
+proc decodeBasicCancelOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicCancelOk(to: OutputStream, data: BasicMethod)
+proc decodeBasicPublish(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicPublish(to: OutputStream, data: BasicMethod)
+proc decodeBasicReturn(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicReturn(to: OutputStream, data: BasicMethod)
+proc decodeBasicDeliver(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicDeliver(to: OutputStream, data: BasicMethod)
+proc decodeBasicGet(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicGet(to: OutputStream, data: BasicMethod)
+proc decodeBasicGetOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicGetOk(to: OutputStream, data: BasicMethod)
+proc decodeBasicGetEmpty(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicGetEmpty(to: OutputStream, data: BasicMethod)
+proc decodeBasicAck(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicAck(to: OutputStream, data: BasicMethod)
+proc decodeBasicReject(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicReject(to: OutputStream, data: BasicMethod)
+proc decodeBasicRecoverAsync(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicRecoverAsync(to: OutputStream, data: BasicMethod)
+proc decodeBasicRecover(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicRecover(to: OutputStream, data: BasicMethod)
+proc decodeBasicRecoverOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicRecoverOk(to: OutputStream, data: BasicMethod)
+proc decodeBasicNack(encoded: InputStream): (bool, seq[uint16], BasicMethod)
+proc encodeBasicNack(to: OutputStream, data: BasicMethod)
+
+proc decode*(_: type[BasicMethod], submethodId: BasicVariants, encoded: InputStream): (bool, seq[uint16], BasicMethod) =
+  case submethodId
+  of BASIC_QOS_METHOD:
+    result = decodeBasicQos(encoded)
+  of BASIC_QOS_OK_METHOD:
+    result = decodeBasicQosOk(encoded)
+  of BASIC_CONSUME_METHOD:
+    result = decodeBasicConsume(encoded)
+  of BASIC_CONSUME_OK_METHOD:
+    result = decodeBasicConsumeOk(encoded)
+  of BASIC_CANCEL_METHOD:
+    result = decodeBasicCancel(encoded)
+  of BASIC_CANCEL_OK_METHOD:
+    result = decodeBasicCancelOk(encoded)
+  of BASIC_PUBLISH_METHOD:
+    result = decodeBasicPublish(encoded)
+  of BASIC_RETURN_METHOD:
+    result = decodeBasicReturn(encoded)
+  of BASIC_DELIVER_METHOD:
+    result = decodeBasicDeliver(encoded)
+  of BASIC_GET_METHOD:
+    result = decodeBasicGet(encoded)
+  of BASIC_GET_OK_METHOD:
+    result = decodeBasicGetOk(encoded)
+  of BASIC_GET_EMPTY_METHOD:
+    result = decodeBasicGetEmpty(encoded)
+  of BASIC_ACK_METHOD:
+    result = decodeBasicAck(encoded)
+  of BASIC_REJECT_METHOD:
+    result = decodeBasicReject(encoded)
+  of BASIC_RECOVER_ASYNC_METHOD:
+    result = decodeBasicRecoverAsync(encoded)
+  of BASIC_RECOVER_METHOD:
+    result = decodeBasicRecover(encoded)
+  of BASIC_RECOVER_OK_METHOD:
+    result = decodeBasicRecoverOk(encoded)
+  of BASIC_NACK_METHOD:
+    result = decodeBasicNack(encoded)
+  else:
+    discard
+
+proc encode*(to: OutputStream, data: BasicMethod) =
+  case data.indexLo
+  of BASIC_QOS_METHOD:
+    to.encodeBasicQos(data)
+  of BASIC_QOS_OK_METHOD:
+    to.encodeBasicQosOk(data)
+  of BASIC_CONSUME_METHOD:
+    to.encodeBasicConsume(data)
+  of BASIC_CONSUME_OK_METHOD:
+    to.encodeBasicConsumeOk(data)
+  of BASIC_CANCEL_METHOD:
+    to.encodeBasicCancel(data)
+  of BASIC_CANCEL_OK_METHOD:
+    to.encodeBasicCancelOk(data)
+  of BASIC_PUBLISH_METHOD:
+    to.encodeBasicPublish(data)
+  of BASIC_RETURN_METHOD:
+    to.encodeBasicReturn(data)
+  of BASIC_DELIVER_METHOD:
+    to.encodeBasicDeliver(data)
+  of BASIC_GET_METHOD:
+    to.encodeBasicGet(data)
+  of BASIC_GET_OK_METHOD:
+    to.encodeBasicGetOk(data)
+  of BASIC_GET_EMPTY_METHOD:
+    to.encodeBasicGetEmpty(data)
+  of BASIC_ACK_METHOD:
+    to.encodeBasicAck(data)
+  of BASIC_REJECT_METHOD:
+    to.encodeBasicReject(data)
+  of BASIC_RECOVER_ASYNC_METHOD:
+    to.encodeBasicRecoverAsync(data)
+  of BASIC_RECOVER_METHOD:
+    to.encodeBasicRecover(data)
+  of BASIC_RECOVER_OK_METHOD:
+    to.encodeBasicRecoverOk(data)
+  of BASIC_NACK_METHOD:
+    to.encodeBasicNack(data)
+  else:
+    discard
 
 #--------------- Basic.Qos ---------------#
 
-proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false): BasicQos =
-  result.new
-  result.initMethod(true, 0x003C000A)
-  result.prefetchSize = prefetchSize
-  result.prefetchCount = prefetchCount
+proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_QOS_METHOD)
+  res.prefetchSize = prefetchSize
+  res.prefetchCount = prefetchCount
+  result = (true, @[ord(BASIC_QOS_OK_METHOD).uint16], res)
 
-proc decode*(_: type[BasicQos], encoded: InputStream): BasicQos =
+proc decodeBasicQos(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, prefetchSize) = encoded.readBigEndianU32()
   let (_, prefetchCount) = encoded.readBigEndianU16()
   let (_, bbuf) = encoded.readBigEndianU8()
   let globalQos = (bbuf and 0x01) != 0
   result = newBasicQos(prefetchSize, prefetchCount, globalQos)
 
-proc encode*(self: BasicQos, to: OutputStream) =
-  let bbuf: uint8 = (if self.globalQos: 0x01 else: 0x00)
-  to.writeBigEndian32(self.prefetchSize)
-  to.writeBigEndian16(self.prefetchCount)
+proc encodeBasicQos(to: OutputStream, data: BasicMethod) =
+  let bbuf: uint8 = (if data.globalQos: 0x01 else: 0x00)
+  to.writeBigEndian32(data.prefetchSize)
+  to.writeBigEndian16(data.prefetchCount)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.QosOk ---------------#
 
-proc newBasicQosOk*(): BasicQosOk =
-  result.new
-  result.initMethod(false, 0x003C000B)
+proc newBasicQosOk*(): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_QOS_OK_METHOD)
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicQosOk], encoded: InputStream): BasicQosOk =
+proc decodeBasicQosOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   result = newBasicQosOk()
 
-proc encode*(self: BasicQosOk, to: OutputStream) = discard
+proc encodeBasicQosOk(to: OutputStream, data: BasicMethod) = discard
 
 #--------------- Basic.Consume ---------------#
 
@@ -112,19 +266,19 @@ proc newBasicConsume*(
   noAck=false, 
   exclusive=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): BasicConsume =
-  result.new
-  result.initMethod(true, 0x003C0014)
-  result.ticket = ticket
-  result.queue = queue
-  result.consumerTag = consumerTag
-  result.noLocal = noLocal
-  result.noAck = noAck
-  result.exclusive = exclusive
-  result.noWait = noWait
-  result.arguments = arguments
+  arguments: TableRef[string, DataTable] = nil): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_CONSUME_METHOD)
+  res.ticket = ticket
+  res.queue = queue
+  res.consumerTag = consumerTag
+  res.noLocal = noLocal
+  res.noAck = noAck
+  res.exclusive = exclusive
+  res.noWait = noWait
+  res.arguments = arguments
+  result = (true, @[ord(BASIC_CONSUME_OK_METHOD).uint16], res)
 
-proc decode*(_: type[BasicConsume], encoded: InputStream): BasicConsume =
+proc decodeBasicConsume(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, ticket) = encoded.readBigEndianU16()
   let (_, queue) = encoded.readShortString()
   let (_, consumerTag) = encoded.readShortString()
@@ -136,77 +290,77 @@ proc decode*(_: type[BasicConsume], encoded: InputStream): BasicConsume =
   let noWait =  (bbuf and 0x08) != 0
   result = newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, arguments)
 
-proc encode*(self: BasicConsume, to: OutputStream) =
+proc encodeBasicConsume(to: OutputStream, data: BasicMethod) =
   let bbuf: uint8 = 0x00.uint8 or 
-  (if self.noLocal: 0x01 else: 0x00) or 
-  (if self.noAck: 0x02 else: 0x00) or 
-  (if self.exclusive: 0x04 else: 0x00) or 
-  (if self.noWait: 0x08 else: 0x00)
-  to.writeBigEndian16(self.ticket)
-  to.writeShortString(self.queue)
-  to.writeShortString(self.consumerTag)
+  (if data.noLocal: 0x01 else: 0x00) or 
+  (if data.noAck: 0x02 else: 0x00) or 
+  (if data.exclusive: 0x04 else: 0x00) or 
+  (if data.noWait: 0x08 else: 0x00)
+  to.writeBigEndian16(data.ticket)
+  to.writeShortString(data.queue)
+  to.writeShortString(data.consumerTag)
   to.writeBigEndian8(bbuf)
-  to.encodeTable(self.arguments)
+  to.encodeTable(data.arguments)
 
 #--------------- Basic.ConsumeOk ---------------#
 
-proc newBasicConsumeOk*(consumerTag=""): BasicConsumeOk =
-  result.new
-  result.initMethod(false, 0x003C0015)
-  result.consumerTag = consumerTag
+proc newBasicConsumeOk*(consumerTag=""): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_CONSUME_OK_METHOD)
+  res.consumerTag = consumerTag
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicConsumeOk], encoded: InputStream): BasicConsumeOk =
+proc decodeBasicConsumeOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, consumerTag) = encoded.readShortString()
   result = newBasicConsumeOk(consumerTag)
 
-proc encode*(self: BasicConsumeOk, to: OutputStream) =
-  to.writeShortString(self.consumerTag)
+proc encodeBasicConsumeOk(to: OutputStream, data: BasicMethod) =
+  to.writeShortString(data.consumerTag)
 
 #--------------- Basic.Cancel ---------------#
 
-proc newBasicCancel*(consumerTag="", noWait=false): BasicCancel =
-  result.new
-  result.initMethod(true, 0x003C001E)
-  result.consumerTag = consumerTag
-  result.noWait = noWait
+proc newBasicCancel*(consumerTag="", noWait=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_CANCEL_METHOD)
+  res.consumerTag = consumerTag
+  res.noWait = noWait
+  result = (true, @[ord(BASIC_CANCEL_OK_METHOD).uint16], res)
 
-proc decode*(_: type[BasicCancel], encoded: InputStream): BasicCancel =
+proc decodeBasicCancel(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, consumerTag) = encoded.readShortString()
   let (_, bbuf) = encoded.readBigEndianU8()
   let noWait = (bbuf and 0x01) != 0
   result = newBasicCancel(consumerTag, noWait)
 
-proc encode*(self: BasicCancel, to: OutputStream) =
-  let bbuf = (if self.noWait: 0x01.uint8 else: 0x00.uint8)
-  to.writeShortString(self.consumerTag)
+proc encodeBasicCancel(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.noWait: 0x01.uint8 else: 0x00.uint8)
+  to.writeShortString(data.consumerTag)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.CancelOk ---------------#
 
-proc newBasicCancelOk*(consumerTag=""): BasicCancelOk =
-  result.new
-  result.initMethod(false, 0x003C001F)
-  result.consumerTag = consumerTag
+proc newBasicCancelOk*(consumerTag=""): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_CANCEL_OK_METHOD)
+  res.consumerTag = consumerTag
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicCancelOk], encoded: InputStream): BasicCancelOk =
+proc decodeBasicCancelOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, consumerTag) = encoded.readShortString()
   result = newBasicCancelOk(consumerTag)
 
-proc encode*(self: BasicCancelOk, to: OutputStream) =
-  to.writeShortString(self.consumerTag)
+proc encodeBasicCancelOk(to: OutputStream, data: BasicMethod) =
+  to.writeShortString(data.consumerTag)
 
 #--------------- Basic.Publish ---------------#
 
-proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=false, immediate=false): BasicPublish =
-  result.new
-  result.initMethod(false, 0x003C0028)
-  result.ticket = ticket
-  result.exchange = exchange
-  result.routingKey = routingKey
-  result.mandatory = mandatory
-  result.immediate = immediate
+proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=false, immediate=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_PUBLISH_METHOD)
+  res.ticket = ticket
+  res.exchange = exchange
+  res.routingKey = routingKey
+  res.mandatory = mandatory
+  res.immediate = immediate
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicPublish], encoded: InputStream): BasicPublish =
+proc decodeBasicPublish(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, ticket) = encoded.readBigEndianU16()
   let (_, exchange) = encoded.readShortString()
   let (_, routingKey) = encoded.readShortString()
@@ -215,50 +369,50 @@ proc decode*(_: type[BasicPublish], encoded: InputStream): BasicPublish =
   let immediate = (bbuf and 0x02) != 0
   result = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
 
-proc encode*(self: BasicPublish, to: OutputStream) =
+proc encodeBasicPublish(to: OutputStream, data: BasicMethod) =
   let bbuf: uint8 = 0x00.uint8 or 
-  (if self.mandatory: 0x01 else: 0x00) or 
-  (if self.immediate: 0x02 else: 0x00)
-  to.writeBigEndian16(self.ticket)
-  to.writeShortString(self.exchange)
-  to.writeShortString(self.routingKey)
+  (if data.mandatory: 0x01 else: 0x00) or 
+  (if data.immediate: 0x02 else: 0x00)
+  to.writeBigEndian16(data.ticket)
+  to.writeShortString(data.exchange)
+  to.writeShortString(data.routingKey)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.Return ---------------#
 
-proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey=""): BasicReturn =
-  result.new
-  result.initMethod(false, 0x003C0032)
-  result.replyCode = replyCode
-  result.replyText = replyText
-  result.exchange = exchange
-  result.routingKey = routingKey
+proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey=""): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_RETURN_METHOD)
+  res.replyCode = replyCode
+  res.replyText = replyText
+  res.exchange = exchange
+  res.routingKey = routingKey
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicReturn], encoded: InputStream): BasicReturn =
+proc decodeBasicReturn(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, replyCode) = encoded.readBigEndianU16()
   let (_, replyText) = encoded.readShortString()
   let (_, exchange) = encoded.readShortString()
   let (_, routingKey) = encoded.readShortString()
   result = newBasicReturn(replyCode, replyText, exchange, routingKey)
 
-proc encode*(self: BasicReturn, to: OutputStream) =
-  to.writeBigEndian16(self.replyCode)
-  to.writeShortString(self.replyText)
-  to.writeShortString(self.exchange)
-  to.writeShortString(self.routingKey)
+proc encodeBasicReturn(to: OutputStream, data: BasicMethod) =
+  to.writeBigEndian16(data.replyCode)
+  to.writeShortString(data.replyText)
+  to.writeShortString(data.exchange)
+  to.writeShortString(data.routingKey)
 
 #--------------- Basic.Deliver ---------------#
 
-proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, exchange="", routingKey=""): BasicDeliver =
-  result.new
-  result.initMethod(false, 0x003C003C)
-  result.consumerTag = consumerTag
-  result.deliveryTag = deliveryTag
-  result.redelivered = redelivered
-  result.exchange = exchange
-  result.routingKey = routingKey
+proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, exchange="", routingKey=""): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_DELIVER_METHOD)
+  res.consumerTag = consumerTag
+  res.deliveryTag = deliveryTag
+  res.redelivered = redelivered
+  res.exchange = exchange
+  res.routingKey = routingKey
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicDeliver], encoded: InputStream): BasicDeliver =
+proc decodeBasicDeliver(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, consumerTag) = encoded.readShortString()
   let (_, deliveryTag) = encoded.readBigEndianU64()
   let (_, bbuf) = encoded.readBigEndianU8()
@@ -267,48 +421,48 @@ proc decode*(_: type[BasicDeliver], encoded: InputStream): BasicDeliver =
   let redelivered = (bbuf and 0x01) != 0
   result = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
 
-proc encode*(self: BasicDeliver, to: OutputStream) =
-  let bbuf = (if self.redelivered: 0x01.uint8 else: 0x00.uint8)
-  to.writeShortString(self.consumerTag)
-  to.writeBigEndian64(self.deliveryTag)
+proc encodeBasicDeliver(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.redelivered: 0x01.uint8 else: 0x00.uint8)
+  to.writeShortString(data.consumerTag)
+  to.writeBigEndian64(data.deliveryTag)
   to.writeBigEndian8(bbuf)
-  to.writeShortString(self.exchange)
-  to.writeShortString(self.routingKey)
+  to.writeShortString(data.exchange)
+  to.writeShortString(data.routingKey)
 
 #--------------- Basic.Get ---------------#
 
-proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): BasicGet =
-  result.new
-  result.initMethod(true, 0x003C0046)
-  result.ticket = ticket
-  result.queue = queue
-  result.noAck = noAck
+proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_GET_METHOD)
+  res.ticket = ticket
+  res.queue = queue
+  res.noAck = noAck
+  result = (true, @[ord(BASIC_GET_OK_METHOD).uint16, ord(BASIC_GET_EMPTY_METHOD).uint16], res)
 
-proc decode*(_: type[BasicGet], encoded: InputStream): BasicGet =
+proc decodeBasicGet(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, ticket) = encoded.readBigEndianU16()
   let (_, queue) = encoded.readShortString()
   let (_, bbuf) = encoded.readBigEndianU8()
   let noAck = (bbuf and 0x01) != 0
   result = newBasicGet(ticket, queue, noAck)
 
-proc encode*(self: BasicGet, to: OutputStream) =
-  let bbuf = (if self.noAck: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian16(self.ticket)
-  to.writeShortString(self.queue)
+proc encodeBasicGet(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.noAck: 0x01.uint8 else: 0x00.uint8)
+  to.writeBigEndian16(data.ticket)
+  to.writeShortString(data.queue)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.GetOk ---------------#
 
-proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routingKey="", messageCount=0.uint32): BasicGetOk =
-  result.new
-  result.initMethod(false, 0x003C0047)
-  result.deliveryTag = deliveryTag
-  result.redelivered = redelivered
-  result.exchange = exchange
-  result.routingKey = routingKey
-  result.messageCount = messageCount
+proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routingKey="", messageCount=0.uint32): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_GET_OK_METHOD)
+  res.deliveryTag = deliveryTag
+  res.redelivered = redelivered
+  res.exchange = exchange
+  res.routingKey = routingKey
+  res.messageCount = messageCount
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicGetOk], encoded: InputStream): BasicGetOk =
+proc decodeBasicGetOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, deliveryTag) = encoded.readBigEndianU64()
   let (_, bbuf) = encoded.readBigEndianU8()
   let (_, exchange) = encoded.readShortString()
@@ -317,127 +471,126 @@ proc decode*(_: type[BasicGetOk], encoded: InputStream): BasicGetOk =
   let redelivered = (bbuf and 0x01) != 0
   result = newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
 
-proc encode*(self: BasicGetOk, to: OutputStream) =
-  let bbuf = (if self.redelivered: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(self.deliveryTag)
+proc encodeBasicGetOk(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.redelivered: 0x01.uint8 else: 0x00.uint8)
+  to.writeBigEndian64(data.deliveryTag)
   to.writeBigEndian8(bbuf)
-  to.writeShortString(self.exchange)
-  to.writeShortString(self.routingKey)
-  to.writeBigEndian32(self.messageCount)
+  to.writeShortString(data.exchange)
+  to.writeShortString(data.routingKey)
+  to.writeBigEndian32(data.messageCount)
 
 #--------------- Basic.GetEmpty ---------------#
 
-proc newBasicGetEmpty*(clusterId=""): BasicGetEmpty =
-  result.new
-  result.initMethod(false, 0x003C0048)
-  result.clusterId = clusterId
+proc newBasicGetEmpty*(clusterId=""): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_GET_EMPTY_METHOD)
+  res.clusterId = clusterId
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicGetEmpty], encoded: InputStream): BasicGetEmpty =
+proc decodeBasicGetEmpty(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, clusterId) = encoded.readShortString()
   result = newBasicGetEmpty(clusterId)
 
-proc encode*(self: BasicGetEmpty, to: OutputStream) =
-  to.writeShortString(self.clusterId)
+proc encodeBasicGetEmpty(to: OutputStream, data: BasicMethod) =
+  to.writeShortString(data.clusterId)
 
 #--------------- Basic.Ack ---------------#
 
-proc newBasicAck*(deliveryTag=0.uint64, multiple=false): BasicAck =
-  result.new
-  result.initMethod(false, 0x003C0050)
-  result.deliveryTag = deliveryTag
-  result.multiple = multiple
+proc newBasicAck*(deliveryTag=0.uint64, multiple=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_ACK_METHOD)
+  res.deliveryTag = deliveryTag
+  res.multiple = multiple
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicAck], encoded: InputStream): BasicAck =
+proc decodeBasicAck(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, deliveryTag) = encoded.readBigEndianU64()
   let (_, bbuf) = encoded.readBigEndianU8()
   let multiple = (bbuf and 0x01) != 0
   result = newBasicAck(deliveryTag, multiple)
 
-proc encode*(self: BasicAck, to: OutputStream) =
-  let bbuf = (if self.multiple: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(self.deliveryTag)
+proc encodeBasicAck(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.multiple: 0x01.uint8 else: 0x00.uint8)
+  to.writeBigEndian64(data.deliveryTag)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.Reject ---------------#
 
-proc newBasicReject*(deliveryTag=0.uint64, requeue=false): BasicReject =
-  result.new
-  result.initMethod(false, 0x003C005A)
-  result.deliveryTag = deliveryTag
-  result.requeue = requeue
+proc newBasicReject*(deliveryTag=0.uint64, requeue=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_REJECT_METHOD)
+  res.deliveryTag = deliveryTag
+  res.requeue = requeue
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicReject], encoded: InputStream): BasicReject =
+proc decodeBasicReject(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, deliveryTag) = encoded.readBigEndianU64()
   let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicReject(deliveryTag, requeue)
 
-proc encode*(self: BasicReject, to: OutputStream) =
-  let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(self.deliveryTag)
+proc encodeBasicReject(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
+  to.writeBigEndian64(data.deliveryTag)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.RecoverAsync ---------------#
 
-proc newBasicRecoverAsync*(requeue=false): BasicRecoverAsync =
-  result.new
-  result.initMethod(false, 0x003C0064)
-  result.requeue = requeue
+proc newBasicRecoverAsync*(requeue=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_RECOVER_ASYNC_METHOD)
+  res.requeue = requeue
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicRecoverAsync], encoded: InputStream): BasicRecoverAsync =
+proc decodeBasicRecoverAsync(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicRecoverAsync(requeue)
 
-proc encode*(self: BasicRecoverAsync, to: OutputStream) =
-  let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
+proc encodeBasicRecoverAsync(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.Recover ---------------#
 
-proc newBasicRecover*(requeue=false): BasicRecover =
-  result.new
-  result.initMethod(true, 0x003C006E)
-  result.requeue = requeue
+proc newBasicRecover*(requeue=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_RECOVER_METHOD)
+  res.requeue = requeue
+  result = (true, @[ord(BASIC_RECOVER_OK_METHOD).uint16], res)
 
-proc decode*(_: type[BasicRecover], encoded: InputStream): BasicRecover =
+proc decodeBasicRecover(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, bbuf) = encoded.readBigEndianU8()
   let requeue = (bbuf and 0x01) != 0
   result = newBasicRecover(requeue)
 
-proc encode*(self: BasicRecover, to: OutputStream) =
-  let bbuf = (if self.requeue: 0x01.uint8 else: 0x00.uint8)
+proc encodeBasicRecover(to: OutputStream, data: BasicMethod) =
+  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
   to.writeBigEndian8(bbuf)
 
 #--------------- Basic.RecoverOk ---------------#
 
-proc newBasicRecoverOk*(): BasicRecoverOk =
-  result.new
-  result.initMethod(false, 0x003C006F)
+proc newBasicRecoverOk*(): (bool, seq[uint16], BasicMethod) =
+  result = (false, @[], BasicMethod(indexLo: BASIC_RECOVER_OK_METHOD))
 
-proc decode*(_: type[BasicRecoverOk], encoded: InputStream): BasicRecoverOk = newBasicRecoverOk()
+proc decodeBasicRecoverOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) = newBasicRecoverOk()
 
-proc encode*(self: BasicRecoverOk, to: OutputStream) = discard
+proc encodeBasicRecoverOk(to: OutputStream, data: BasicMethod) = discard
 
 #--------------- Basic.Nack ---------------#
 
-proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): BasicNack =
-  result.new
-  result.initMethod(false, 0x003C0078)
-  result.deliveryTag = deliveryTag
-  result.multiple = multiple
-  result.requeue = requeue
+proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): (bool, seq[uint16], BasicMethod) =
+  var res = BasicMethod(indexLo: BASIC_NACK_METHOD)
+  res.deliveryTag = deliveryTag
+  res.multiple = multiple
+  res.requeue = requeue
+  result = (false, @[], res)
 
-proc decode*(_: type[BasicNack], encoded: InputStream): BasicNack =
+proc decodeBasicNack(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
   let (_, deliveryTag) = encoded.readBigEndianU64()
   let (_, bbuf) = encoded.readBigEndianU8()
   let multiple = (bbuf and 0x01) != 0
   let requeue = (bbuf and 0x02) != 0
   result = newBasicNack(deliveryTag, multiple, requeue)
 
-proc encode*(self: BasicNack, to: OutputStream) =
+proc encodeBasicNack(to: OutputStream, data: BasicMethod) =
   let bbuf = 0x00.uint8 or
-    (if self.multiple: 0x01.uint8 else: 0x00.uint8) or
-    (if self.requeue: 0x02.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(self.deliveryTag)
+    (if data.multiple: 0x01.uint8 else: 0x00.uint8) or
+    (if data.requeue: 0x02.uint8 else: 0x00.uint8)
+  to.writeBigEndian64(data.deliveryTag)
   to.writeBigEndian8(bbuf)

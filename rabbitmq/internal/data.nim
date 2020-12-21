@@ -7,7 +7,7 @@ import ./streams
 
 type
   Decimal = string
-  DataType = enum
+  DataType* = enum
     dtBool = "t"
     dtByte = "b"
     dtUByte = "B"
@@ -28,45 +28,64 @@ type
     dtTable = "F"
     dtVoid = "V"
 
+  U32t2U16* {.union.} = object
+    unsigned32: uint32
+    unsigned16: array[2, uint16]
+
   DataTable* = ref DataTableObj
-  DataTableObj {.acyclic.} = object
-    case dtype: DataType
+  DataTableObj* {.acyclic.} = object
+    case dtype*: DataType
     of dtBool:
-      boolVal: bool
+      boolVal*: bool
     of dtByte:
-      byteVal: int8
+      byteVal*: int8
     of dtUByte:
-      uByteVal: uint8
+      uByteVal*: uint8
     of dtShort, dtSignedShort:
-      shortVal: int16
+      shortVal*: int16
     of dtUShort:
-      uShortVal: uint16
+      uShortVal*: uint16
     of dtInt:
-      intVal: int32
+      intVal*: int32
     of dtUInt:
-      uIntVal: uint32
+      uIntVal*: uint32
     of dtLong:
-      longVal: int64
+      longVal*: int64
     of dtULong:
-      uLongVal: uint64
+      uLongVal*: uint64
     of dtFloat:
-      floatVal: float32
+      floatVal*: float32
     of dtDouble:
-      doubleVal: float64
+      doubleVal*: float64
     of dtDecimal:
-      decimalVal: Decimal
+      decimalVal*: Decimal
     of dtString:
-      stringVal: string
+      stringVal*: string
     of dtBytes:
-      bytesVal: seq[int8]
+      bytesVal*: seq[int8]
     of dtArray:
-      arrayVal: seq[DataTable]
+      arrayVal*: seq[DataTable]
     of dtTimestamp:
-      tsVal: Time
+      tsVal*: Time
     of dtTable:
-      tableVal: TableRef[string, DataTable]
+      tableVal*: TableRef[string, DataTable]
     of dtVoid:
       discard
+
+proc uint32touints16*(source: uint32): (uint16, uint16) =
+  let src: U32t2U16 = U32t2U16(unsigned32: source)
+  when system.cpuEndian == bigEndian:
+    result = (src.unsigned16[0], src.unsigned16[1])
+  else:
+    result = (src.unsigned16[1], src.unsigned16[0])
+
+proc uints16touint32*(srcHi: uint16, srcLo: uint16): uint32 =
+  when system.cpuEndian == bigEndian:
+    let src: U32t2U16 = U32t2U16(unsigned16: [srcHi, srcLo])
+  else:
+    let src: U32t2U16 = U32t2U16(unsigned16: [srcLo, srcHi])
+  result = src.unsigned32
+
 
 const sizeInt8Uint8 = sizeof(int8)
 proc readBigEndian8*(s: InputStream): (int, int8) =

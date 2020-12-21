@@ -16,7 +16,7 @@ type
   Frame* = ref FrameObj
   FrameObj* = object
     channelNum: uint16
-    case frameType: FrameType
+    case frameType*: FrameType
     of ftMethod:
       meth*: Method
     of ftHeader:
