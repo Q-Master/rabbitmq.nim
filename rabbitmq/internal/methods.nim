@@ -13,12 +13,15 @@ import ./streams
 import ./spec
 
 export access.AccessMethod, basic.BasicMethod, channel.ChannelMethod, confirm.ConfirmMethod, connection.ConnectionMethod, exchange.ExchangeMethod, queue.QueueMethod
+export access.AccessVariants, basic.BasicVariants, channel.ChannelVariants, confirm.ConfirmVariants, connection.ConnectionVariants, exchange.ExchangeVariants, queue.QueueVariants
+export connection.newClientProps
+export connection.checkCloseReason
 
 const NO_SUCH_METHOD_STR = "No such method"
 const WRONG_METHOD_STR = "Wrong method"
 
 type
-  MethodVariants = enum
+  MethodVariants* = enum
     NONE = 0
     CONNECTION_METHODS = connection.CONNECTION_METHODS
     CHANNEL_METHODS = channel.CHANNEL_METHODS
@@ -103,34 +106,56 @@ template encodeIndex(to: OutputStream, idxHi: uint16, idxLo: uint16) =
   let idx = uints16touint32(idxHi, idxLo)
   to.writeBigEndian32(idx)
 
-proc encodeMethod*(to: OutputStream, m: Method) =
+proc getIndexes(m: Method): (uint16, uint16) =
+  var indexLo: uint16 = 0
   case m.indexHi
   of ACCESS_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.access.indexLo).uint16)
+    indexLo = ord(m.access.indexLo).uint16
+  of BASIC_METHODS:
+    indexLo = ord(m.basic.indexLo).uint16
+  of CHANNEL_METHODS:
+    indexLo = ord(m.channel.indexLo).uint16
+  of CONFIRM_METHODS:
+    indexLo = ord(m.confirm.indexLo).uint16
+  of CONNECTION_METHODS:
+    indexLo = ord(m.connection.indexLo).uint16
+  of EXCHANGE_METHODS:
+    indexLo = ord(m.exchange.indexLo).uint16
+  of QUEUE_METHODS:
+    indexLo = ord(m.queue.indexLo).uint16
+  of TX_METHODS:
+    indexLo = ord(m.tx.indexLo).uint16
+  else:
+    raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
+  result = (ord(m.indexHi).uint16, indexLo)
+
+proc encodeMethod*(to: OutputStream, m: Method) =
+  let(idxHi, idxLo) = m.getIndexes()
+  to.encodeIndex(idxHi, idxLo)
+  case m.indexHi
+  of ACCESS_METHODS:
     to.encode(m.access)
   of BASIC_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.basic.indexLo).uint16)
     to.encode(m.basic)
   of CHANNEL_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.channel.indexLo).uint16)
     to.encode(m.channel)
   of CONFIRM_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.confirm.indexLo).uint16)
     to.encode(m.confirm)
   of CONNECTION_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.connection.indexLo).uint16)
     to.encode(m.connection)
   of EXCHANGE_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.exchange.indexLo).uint16)
     to.encode(m.exchange)
   of QUEUE_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.queue.indexLo).uint16)
     to.encode(m.queue)
   of TX_METHODS:
-    to.encodeIndex(ord(m.indexHi).uint16, ord(m.tx.indexLo).uint16)
     to.encode(m.tx)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
+
+
+proc checkResponseValidity*(request: Method, response: Method): bool =
+  let (_, idxLo) = response.getIndexes()
+  result = (request.indexHi == response.indexHi) and (idxLo in request.validResponses)
 
 #----------------------- Access -----------------------#
 

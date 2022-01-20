@@ -7,7 +7,6 @@ import net
 import times
 import options
 import ./auth
-import ./async_socket_adapters
 import ./url
 import ./channel
 import ./data
@@ -26,6 +25,7 @@ type
     csOpen
     csClosing
     csClosed
+  
   ConnectionInfo* = ref ConnectionInfoObj
   ConnectionInfoObj = object
     host*: string
@@ -37,6 +37,7 @@ type
     hbMonitoringTimeout*: uint
     connectionName*: string
     sslCtx: SslContext
+  
   AsyncConnection* = ref AsyncConnectionObj
   AsyncConnectionObj = object
     sock: AsyncSocket
@@ -47,7 +48,7 @@ type
     channels: Table[int, Channel]
     serverProps: TableRef[string, DataTable]
     serverCaps: TableRef[string, DataTable]
-    tune: ConnectionTuneOk
+    tune: ConnectionMethod
     lastChannelLock: Lock
     lastChannel {.guard: lastChannelLock.} : int
     hearbeatMonitoring: bool
@@ -56,6 +57,7 @@ type
     auth: AuthMechanism
     connected: AsyncEvent
     connectionName: string
+  
   ConnectionPool* = ref ConnectionPoolObj
   ConnectionPoolObj* = object
     connectionInfo: ConnectionInfo
@@ -133,6 +135,48 @@ proc connect*(url: string): Future[AsyncConnection] {.async.} =
   let cInfo = newConnectionInfoWithURL(url)
   result = await connect(cInfo)
 
+proc close*(conn: AsyncConnection) {.async.} =
+  #[
+    async def __closer(self, exc):
+        if self.is_closed:  # pragma: no cover
+            return
+
+        with suppress(Exception):
+            await self._on_close(exc)
+
+        with suppress(Exception):
+            await self._cancel_tasks(exc)
+
+    async def close(self, exc=asyncio.CancelledError()):
+        if self.is_closed:
+            return
+
+        await self.loop.create_task(self.__closer(exc))
+    
+    def _cancel_tasks(self, exc: Union[Exception, Type[Exception]] = None):
+        return self.__future_store.reject_all(exc)
+    
+    @shield
+      async def reject_all(self, exception: Exception):
+          tasks = []
+
+          while self.futures:
+              future = self.futures.pop()  # type: TaskWrapper
+
+              if future.done():
+                  continue
+
+              if isinstance(future, TaskWrapper):
+                  future.throw(exception or Exception)
+                  tasks.append(future)
+              elif isinstance(future, asyncio.Future):
+                  future.set_exception(exception)
+
+          if tasks:
+              await asyncio.gather(*tasks, return_exceptions=True)
+  ]# 
+  discard
+
 proc createSSLContext(caFile: string, caPath: string, key: string, cert: string, verify: bool): SslContext =
   result = newContext(
       verifyMode = (if verify: CVerifyPeer else: CVerifyNone),
@@ -185,17 +229,6 @@ proc newConnectionInfoWithURL(url: string): ConnectionInfo =
     sslCtx
   )
 
-#[
-        # noinspection PyAsyncCall
-        self._reader_task = self.create_task(self.__reader())
-
-        # noinspection PyAsyncCall
-        heartbeat_task = self.create_task(self.__heartbeat_task())
-        heartbeat_task.add_done_callback(self._on_heartbeat_done)
-        self.loop.call_soon(self.connected.set)
-
-        return True
-]#
 proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.} =
   result = newAsyncConnection()
   if not cInfo.sslCtx.isNil():
@@ -204,17 +237,17 @@ proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.} =
   let pHeader = newProtocolHeader()
   var outStream = newOutputStream()
   pHeader.encodeFrame(outStream)
-  let res: ConnectionStart = cast[ConnectionStart](await result.receiveFrame())
+  let res: ConnectionMethod = (await result.receiveFrame()).connection
   result.heartbeatLastReceived = getTime()
   result.auth = getAuthMechanism(res.mechanisms)
   result.serverProps = res.properties
-  let connectionTune: ConnectionTune = cast[ConnectionTune](await result.rpc(
+  let connectionTune: ConnectionMethod = (await result.rpc(
     newConnectionStartOk(
       clientProps = newClientProps(cInfo.connectionName), 
       mechanisms=getAuthMechanismName(result.auth), 
       response=encodeAuth(result.auth, cInfo.login, cInfo.password)
     )
-  ))
+  )).connection
   if result.heartbeatTimeout > 0:
     connectionTune.heartbeat = result.heartbeatTimeout
   discard waitFor result.rpc(
@@ -228,6 +261,19 @@ proc connect(cInfo: ConnectionInfo): Future[AsyncConnection] {.async.} =
   discard waitFor result.rpc(
     newConnectionOpen(virtualHost=cInfo.vhost)
   )
+  #[
+    # noinspection PyAsyncCall
+    self._reader_task = self.create_task(self.__reader())
+
+    # noinspection PyAsyncCall
+    heartbeat_task = self.create_task(self.__heartbeat_task())
+    heartbeat_task.add_done_callback(self._on_heartbeat_done)
+    self.loop.call_soon(self.connected.set)
+
+    return True
+  ]#
+  callSoon do ():
+    result.connected.trigger()
 
 proc receiveFrame(conn: AsyncConnection): Future[Method] {.async.} =
   var frameHeader = await conn.sock.recv(1)
@@ -262,9 +308,8 @@ proc rpc(conn: AsyncConnection, request: Method, waitResponce: bool = true): Fut
   if not waitResponce:
     return nil
   let result = await conn.receiveFrame()
-  if result.syncronous and not result.index in request.validResponses:
+  if result.syncronous and not checkResponseValidity(request, result):
     raise newException(AMQPInternalError, "Wrong reply")
-  elif result.name == "Connection.Close":
+  elif result.indexHi == CONNECTION_METHODS and result.connection.indexLo == CONNECTION_CLOSE_METHOD:
     await conn.close()
-    checkCloseReason(cast[ConnectionClose](result))
-
+    checkCloseReason(result.connection)

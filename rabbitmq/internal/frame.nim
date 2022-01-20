@@ -117,7 +117,7 @@ proc encodeFrame*(f: Frame, to: OutputStream) =
     to.writeBigEndian16(0.uint16)
     to.writeBigEndian64(f.bodySize)
   of ftMethod:
-    f.meth.encodeMethod(to)
+    to.encodeMethod(f.meth)
   of ftBody:
     to.write(f.fragment)
   else:
