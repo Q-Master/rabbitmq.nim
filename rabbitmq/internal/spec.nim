@@ -20,3 +20,6 @@ let DEFAULT_PORTS* = {
 
 const PRODUCT* = "rabbitmq.nim"
 const PLATFORM* = "Nim " & NimVersion
+const RMQVERSION* = "0.1"
+const AUTHOR* = "Vladimir Berezenko <qmaster2000@gmail.com>"
+const INFORMATION* = "See https://github.com/Q-Master/rabbitmq.nim"

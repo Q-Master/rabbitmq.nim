@@ -30,7 +30,7 @@ type
     noWait*: bool
     ticket*: uint16
     exchange*: string
-    arguments*: TableRef[string, DataTable]
+    arguments*: TableRef[string, Field]
     case indexLo*: ExchangeVariants
     of EXCHANGE_DECLARE_METHOD:
       etype*: string
@@ -123,7 +123,7 @@ proc newExchangeDeclare*(
   autoDelete=false, 
   internal=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable]=nil): (bool, seq[uint16], ExchangeMethod) =
+  arguments: TableRef[string, Field]=nil): (bool, seq[uint16], ExchangeMethod) =
   var res = ExchangeMethod(indexLo: EXCHANGE_DECLARE_METHOD)
   res.ticket = ticket
   res.exchange = exchange
@@ -214,7 +214,7 @@ proc newExchangeBind*(
   source = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): (bool, seq[uint16], ExchangeMethod) =
+  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], ExchangeMethod) =
   var res = ExchangeMethod(indexLo: EXCHANGE_BIND_METHOD)
   res.destination = destination
   res.source = source
@@ -259,7 +259,7 @@ proc newExchangeUnbind*(
   source = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): (bool, seq[uint16], ExchangeMethod) =
+  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], ExchangeMethod) =
   var res = ExchangeMethod(indexLo: EXCHANGE_UNBIND_METHOD)
   res.destination = destination
   res.source = source

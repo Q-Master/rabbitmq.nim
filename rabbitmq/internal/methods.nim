@@ -185,7 +185,7 @@ proc newBasicConsume*(
   noAck=false, 
   exclusive=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): Method =
+  arguments: TableRef[string, Field] = nil): Method =
   result = Method(indexHi: BASIC_METHODS)
   (result.syncronous, result.validResponses, result.basic) = basic.newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, arguments)
 
@@ -287,11 +287,11 @@ proc newConfirmSelectOk*(): Method =
 
 #----------------------- Connection -----------------------#
 
-proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], properties: TableRef[string, DataTable]=nil, mechanisms="PLAIN", locales="en_US"): Method =
+proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], properties: TableRef[string, Field]=nil, mechanisms="PLAIN", locales="en_US"): Method =
   result = Method(indexHi: CONNECTION_METHODS)
   (result.syncronous, result.validResponses, result.connection) = connection.newConnectionStart(major, minor, properties, mechanisms, locales)
 
-proc newConnectionStartOk*(clientProps: TableRef[string, DataTable] = nil, mechanisms="PLAIN", response="", locales="en_US"): Method =
+proc newConnectionStartOk*(clientProps: TableRef[string, Field] = nil, mechanisms="PLAIN", response="", locales="en_US"): Method =
   result = Method(indexHi: CONNECTION_METHODS)
   (result.syncronous, result.validResponses, result.connection) = connection.newConnectionStartOk(clientProps, mechanisms, response, locales)
 
@@ -346,7 +346,7 @@ proc newExchangeDeclare*(
   autoDelete=false, 
   internal=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable]=nil): Method =
+  arguments: TableRef[string, Field]=nil): Method =
   result = Method(indexHi: EXCHANGE_METHODS)
   (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeDeclare(ticket, exchangeName, etype, passive, durable, autoDelete, internal, noWait, arguments)
 proc newExchangeDeclareOk*(): Method =
@@ -367,7 +367,7 @@ proc newExchangeBind*(
   source = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): Method =
+  arguments: TableRef[string, Field] = nil): Method =
   result = Method(indexHi: EXCHANGE_METHODS)
   (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeBind(ticket, destination, source, routingKey, noWait, arguments)
 
@@ -381,7 +381,7 @@ proc newExchangeUnbind*(
   source = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): Method =
+  arguments: TableRef[string, Field] = nil): Method =
   result = Method(indexHi: EXCHANGE_METHODS)
   (result.syncronous, result.validResponses, result.exchange) = exchange.newExchangeUnbind(ticket, destination, source, routingKey, noWait, arguments)
 
@@ -399,7 +399,7 @@ proc newQueueDeclare*(
   exclusive=false,
   autoDelete=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable]=nil): Method =
+  arguments: TableRef[string, Field]=nil): Method =
   result = Method(indexHi: QUEUE_METHODS)
   (result.syncronous, result.validResponses, result.queue) = queue.newQueueDeclare(ticket, queueName, passive, durable, exclusive, autoDelete, noWait, arguments)
 
@@ -413,7 +413,7 @@ proc newQueueBind*(
   bQueue = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): Method =
+  arguments: TableRef[string, Field] = nil): Method =
   result = Method(indexHi: QUEUE_METHODS)
   (result.syncronous, result.validResponses, result.queue) = queue.newQueueBind(ticket, queueName, bQueue, routingKey, noWait, arguments)
 
@@ -442,7 +442,7 @@ proc newQueueUnbind*(
   queueName = "", 
   bQueue = "", 
   routingKey = "", 
-  arguments: TableRef[string, DataTable] = nil): Method =
+  arguments: TableRef[string, Field] = nil): Method =
   result = Method(indexHi: QUEUE_METHODS)
   (result.syncronous, result.validResponses, result.queue) = queue.newQueueUnbind(ticket, queueName, bQueue, routingKey, arguments)
 

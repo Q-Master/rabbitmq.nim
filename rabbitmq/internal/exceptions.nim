@@ -2,22 +2,24 @@ type
     InvalidFieldTypeException* = object of CatchableError
     InvalidFrameException* = object of CatchableError
     InvalidFrameMethodException* = object of CatchableError
-    ConnectionException* = object of CatchableError
-    ConnectionFrameError* = object of ConnectionException
-    ConnectionSyntaxError* = object of ConnectionException
-    ConnectionCommandInvalid* = object of ConnectionException
-    ConnectionChannelError* = object of ConnectionException
-    ConnectionUnexpectedFrame* = object of ConnectionException
-    ConnectionResourceError* = object of ConnectionException
-    ConnectionNotAllowed* = object of ConnectionException
-    ConnectionNotImplemented* = object of ConnectionException
-    ConnectionInternalError* = object of ConnectionException
-    ConnectionClosed* = object of ConnectionException
+    RMQConnectionException* = object of CatchableError
+    RMQConnectionFailed* = object of RMQConnectionException
+    RMQConnectionFrameError* = object of RMQConnectionException
+    RMQConnectionSyntaxError* = object of RMQConnectionException
+    RMQConnectionCommandInvalid* = object of RMQConnectionException
+    RMQConnectionChannelError* = object of RMQConnectionException
+    RMQConnectionUnexpectedFrame* = object of RMQConnectionException
+    RMQConnectionResourceError* = object of RMQConnectionException
+    RMQConnectionNotAllowed* = object of RMQConnectionException
+    RMQConnectionNotImplemented* = object of RMQConnectionException
+    RMQConnectionInternalError* = object of RMQConnectionException
+    RMQConnectionClosed* = object of RMQConnectionException
 
 type
     # AMQP Errors
     AMQPError = object of CatchableError
         value*: int
+    AMQPIncompatibleProtocol* = object of AMQPError
     AMQPContentTooLarge* = object of AMQPError
     AMQPNoRoute* = object of AMQPError
     AMQPNoConsumers* = object of AMQPError
@@ -32,6 +34,7 @@ type
     AMQPCommandInvalid* = object of AMQPError
     AMQPChannelError* = object of AMQPError
     AMQPUnexpectedFrame* = object of AMQPError
+    AMQPUnexpectedMethod* = object of AMQPError
     AMQPResourceError* = object of AMQPError
     AMQPNotAllowed* = object of AMQPError
     AMQPNotImplemented* = object of AMQPError

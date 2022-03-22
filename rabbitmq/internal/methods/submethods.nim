@@ -1,4 +1,4 @@
 type
-  SubMethod* {.inheritable.} = ref SubMethodObj
-  SubMethodObj* {.inheritable.} = object
+  AMQPSubMethod* {.inheritable.} = ref AMQPSubMethodObj
+  AMQPSubMethodObj* {.inheritable.} = object
     #indexLo: uint16

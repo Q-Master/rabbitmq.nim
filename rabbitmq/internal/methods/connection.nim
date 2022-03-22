@@ -1,24 +1,99 @@
-import tables
-import ./submethods
-import ../spec
-import ../data
+import std/[asyncdispatch, tables]
+import pkg/networkutils/buffered_socket
+import ../field
 import ../exceptions
-import ../streams
 
 const CONNECTION_METHODS* = 0x000A.uint16
-const CONNECTION_START_METHOD_ID = 0x000A000A.uint32
-const CONNECTION_START_OK_METHOD_ID = 0x000A000B.uint32
-const CONNECTION_SECURE_METHOD_ID = 0x000A0014.uint32
-const CONNECTION_SECURE_OK_METHOD_ID = 0x000A0015.uint32
-const CONNECTION_TUNE_METHOD_ID = 0x000A001E.uint32
-const CONNECTION_TUNE_OK_METHOD_ID = 0x000A001F.uint32
-const CONNECTION_OPEN_METHOD_ID = 0x000A0028.uint32
-const CONNECTION_OPEN_OK_METHOD_ID = 0x000A0029.uint32
-const CONNECTION_CLOSE_METHOD_ID = 0x000A0032.uint32
-const CONNECTION_CLOSE_OK_METHOD_ID = 0x000A0033.uint32
-const CONNECTION_BLOCKED_METHOD_ID = 0x000A003C.uint32
-const CONNECTION_UNBLOCKED_METHOD_ID = 0x000A003D.uint32
+const CONNECTION_START_METHOD_ID* = 0x000A000A.uint32
+const CONNECTION_START_OK_METHOD_ID* = 0x000A000B.uint32
+const CONNECTION_SECURE_METHOD_ID* = 0x000A0014.uint32
+const CONNECTION_SECURE_OK_METHOD_ID* = 0x000A0015.uint32
+const CONNECTION_TUNE_METHOD_ID* = 0x000A001E.uint32
+const CONNECTION_TUNE_OK_METHOD_ID* = 0x000A001F.uint32
+const CONNECTION_OPEN_METHOD_ID* = 0x000A0028.uint32
+const CONNECTION_OPEN_OK_METHOD_ID* = 0x000A0029.uint32
+const CONNECTION_CLOSE_METHOD_ID* = 0x000A0032.uint32
+const CONNECTION_CLOSE_OK_METHOD_ID* = 0x000A0033.uint32
+const CONNECTION_BLOCKED_METHOD_ID* = 0x000A003C.uint32
+const CONNECTION_UNBLOCKED_METHOD_ID* = 0x000A003D.uint32
 
+type
+  AMQPConnectionKind = enum
+    AMQP_CONNECTION_NONE = 0
+    AMQP_CONNECTION_START_SUBMETHOD = (CONNECTION_START_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_START_OK_SUBMETHOD = (CONNECTION_START_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_SECURE_SUBMETHOD = (CONNECTION_SECURE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_SECURE_OK_SUBMETHOD = (CONNECTION_SECURE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_TUNE_SUBMETHOD = (CONNECTION_TUNE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_TUNE_OK_SUBMETHOD = (CONNECTION_TUNE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_OPEN_SUBMETHOD = (CONNECTION_OPEN_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_OPEN_OK_SUBMETHOD = (CONNECTION_OPEN_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_CLOSE_SUBMETHOD = (CONNECTION_CLOSE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_CLOSE_OK_SUBMETHOD = (CONNECTION_CLOSE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_BLOCKED_SUBMETHOD = (CONNECTION_BLOCKED_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_CONNECTION_UNBLOCKED_SUBMETHOD = (CONNECTION_UNBLOCKED_METHOD_ID and 0x0000FFFF).uint16
+
+  AMQPConnection* = ref AMQPConnectionObj
+  AMQPConnectionObj* = object of RootObj
+    case kind: AMQPConnectionKind
+    of AMQP_CONNECTION_START_SUBMETHOD:
+      versionMajor*: uint8
+      versionMinor*: uint8
+      serverProperties*: TableRef[string, Field]
+      mechanisms*: string
+      locales*: string
+    of AMQP_CONNECTION_START_OK_SUBMETHOD:
+      clientProps*: TableRef[string, Field]
+      mechanism*: string
+      response*: string
+      locale*: string
+    else:
+      discard
+
+proc decode*(s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.} =
+  case t:
+  of CONNECTION_START_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_START_SUBMETHOD)
+    result.versionMajor = await s.readU8()
+    result.versionMinor = await s.readU8()
+    result.serverProperties = await s.decodeTable()
+    result.mechanisms = await s.decodeString()
+    result.locales = await s.decodeString()
+  of CONNECTION_START_OK_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_START_OK_SUBMETHOD)
+    result.clientProps = await s.decodeTable()
+    result.mechanism = await s.decodeString()
+    result.response = await s.decodeString()
+    result.locale = await s.decodeShortString()
+  else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
+  case meth.kind:
+  of AMQP_CONNECTION_START_SUBMETHOD:
+    await dst.write(meth.versionMajor)
+    await dst.write(meth.versionMinor)
+    await dst.encodeTable(meth.serverProperties)
+    await dst.encodeString(meth.mechanisms)
+    await dst.encodeString(meth.locales)
+  of AMQP_CONNECTION_START_OK_SUBMETHOD:
+    await dst.encodeTable(meth.clientProps)
+    await dst.encodeString(meth.mechanism)
+    await dst.encodeString(meth.response)
+    await dst.encodeShortString(meth.locale)
+  else:
+      raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+proc newConnectionStartOk*(clientProps: TableRef[string, Field], mechanism="PLAIN", response="", locale="en_US"): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_START_OK_SUBMETHOD, 
+    clientProps: clientProps, 
+    mechanism: mechanism, 
+    response: response, 
+    locale: locale
+  )
+
+#[
 type
   ConnectionVariants* = enum
     NONE = 0
@@ -35,18 +110,17 @@ type
     CONNECTION_BLOCKED_METHOD = (CONNECTION_BLOCKED_METHOD_ID and 0x0000FFFF).uint16
     CONNECTION_UNBLOCKED_METHOD = (CONNECTION_UNBLOCKED_METHOD_ID and 0x0000FFFF).uint16
 
-
 type 
   ConnectionMethod* = ref object of SubMethod
     case indexLo*: ConnectionVariants
     of CONNECTION_START_METHOD:
       major*: uint8
       minor*: uint8
-      properties*: TableRef[string, DataTable]
+      properties*: TableRef[string, Field]
       mechanisms*: string
       locales*: string
     of CONNECTION_START_OK_METHOD, CONNECTION_SECURE_OK_METHOD:
-      clientProps*: TableRef[string, DataTable]
+      clientProps*: TableRef[string, Field]
       mechanism*: string
       response*: string
       locale*: string
@@ -160,7 +234,7 @@ proc encode*(to: OutputStream, data: ConnectionMethod) =
     discard
 #--------------- Connection.Start ---------------#
 
-proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], properties: TableRef[string, DataTable]=nil, mechanisms="PLAIN", locales="en_US"): (bool, seq[uint16], ConnectionMethod) =
+proc newConnectionStart*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], properties: TableRef[string, Field]=nil, mechanisms="PLAIN", locales="en_US"): (bool, seq[uint16], ConnectionMethod) =
   var res = ConnectionMethod(indexLo: CONNECTION_START_METHOD)
   res.major = major
   res.minor = minor
@@ -186,7 +260,7 @@ proc encodeConnectionStart(to: OutputStream, data: ConnectionMethod) =
 
 #--------------- Connection.StartOk ---------------#
 
-proc newConnectionStartOk*(clientProps: TableRef[string, DataTable] = nil, mechanisms="PLAIN", response="", locales="en_US"): (bool, seq[uint16], ConnectionMethod) =
+proc newConnectionStartOk*(clientProps: TableRef[string, Field] = nil, mechanisms="PLAIN", response="", locales="en_US"): (bool, seq[uint16], ConnectionMethod) =
   var res = ConnectionMethod(indexLo: CONNECTION_START_OK_METHOD)
   res.clientProps = clientProps
   res.mechanism = mechanisms
@@ -207,22 +281,22 @@ proc encodeConnectionStartOk(to: OutputStream, data: ConnectionMethod) =
   to.writeString(data.response)
   to.writeShortString(data.locale)
 
-proc newClientProps*(connName: string): TableRef[string, DataTable] =
+proc newClientProps*(connName: string): TableRef[string, Field] =
   result = {
-    "platform": DataTable(dtype: dtString, stringVal: PLATFORM),
-    "version": DataTable(dtype: dtString, stringVal: "0.0.1"),
-    "product": DataTable(dtype: dtString, stringVal: PRODUCT),
-    "capabilities": DataTable(dtype: dtTable, tableVal: {
-      "authentication_failure_close": DataTable(dtype: dtBool, boolVal: true),
-      "basic.nack": DataTable(dtype: dtBool, boolVal: true),
-      "connection.blocked": DataTable(dtype: dtBool, boolVal: false),
-      "consumer_cancel_notify": DataTable(dtype: dtBool, boolVal: true),
-      "publisher_confirms": DataTable(dtype: dtBool, boolVal: true),
+    "platform": Field(dtype: dtString, stringVal: PLATFORM),
+    "version": Field(dtype: dtString, stringVal: "0.0.1"),
+    "product": Field(dtype: dtString, stringVal: PRODUCT),
+    "capabilities": Field(dtype: dtTable, tableVal: {
+      "authentication_failure_close": Field(dtype: dtBool, boolVal: true),
+      "basic.nack": Field(dtype: dtBool, boolVal: true),
+      "connection.blocked": Field(dtype: dtBool, boolVal: false),
+      "consumer_cancel_notify": Field(dtype: dtBool, boolVal: true),
+      "publisher_confirms": Field(dtype: dtBool, boolVal: true),
     }.newTable()),
-    "information": DataTable(dtype: dtString, stringVal: "See https://github.com/Q-Master/rabbitmq.nim"),
+    "information": Field(dtype: dtString, stringVal: "See https://github.com/Q-Master/rabbitmq.nim"),
   }.newTable()
   if connName != "":
-    result["connection_name"] = DataTable(dtype: dtString, stringVal: connName)
+    result["connection_name"] = Field(dtype: dtString, stringVal: connName)
 
 #--------------- Connection.Secure ---------------#
 
@@ -406,3 +480,4 @@ proc newConnectionUnblocked*(): (bool, seq[uint16], ConnectionMethod) =
 proc decodeConnectionUnblocked(encoded: InputStream): (bool, seq[uint16], ConnectionMethod) = newConnectionUnblocked()
 
 proc encodeConnectionUnblocked(to: OutputStream, data: ConnectionMethod) = discard
+]#

@@ -25,7 +25,7 @@ type
   BasicProperties* = ref object of Properties
     contentType: Option[string]
     contentEncoding: Option[string]
-    headers: TableRef[string, DataTable]
+    headers: TableRef[string, Field]
     deliveryMode: Option[uint8]
     priority: Option[uint8]
     correlationId: Option[string]
@@ -41,7 +41,7 @@ type
 proc newBasicProperties*(
     contentType=none(string), 
     contentEncoding=none(string), 
-    headers:TableRef[string, DataTable]=nil, 
+    headers:TableRef[string, Field]=nil, 
     deliveryMode=none(uint8), 
     priority=none(uint8), 
     correlationId=none(string), 

@@ -1,9 +1,10 @@
+import std/[asyncdispatch]
+import pkg/networkutils/buffered_socket
 import ./spec
-import ./data
+import ./field
 import ./exceptions
-import ./methods
+import ./methods/all
 import ./properties
-import ./streams
 
 type
   FrameType* = enum
@@ -16,9 +17,10 @@ type
   Frame* = ref FrameObj
   FrameObj* = object
     channelNum: uint16
+    size: uint32
     case frameType*: FrameType
     of ftMethod:
-      meth*: Method
+      meth*: AMQPMethod
     of ftHeader:
       bodySize: uint64
       props: Properties
@@ -31,31 +33,28 @@ type
       minor: uint8
       revision: uint8
 
-proc newMethod*(channelNum: uint16, meth: Method): Frame =
-  result.new
-  result.frameType = ftMethod
-  result.channelNum = channelNum
-  result.meth = meth
+proc newMethodFrame*(channelNum: uint16, meth: AMQPMethod): Frame =
+  result = Frame(frameType: ftMethod, channelNum: channelNum, meth: meth)
 
-proc newHeader*(channelNum: uint16, bodySize: uint64, props: Properties): Frame =
+proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): Frame =
   result.new
   result.frameType = ftHeader
   result.channelNum = channelNum
   result.bodySize = bodySize
   result.props = props
 
-proc newBody*(channelNum: uint16, fragment: string): Frame =
+proc newBodyFrame*(channelNum: uint16, fragment: string): Frame =
   result.new
   result.frameType = ftBody
   result.channelNum = channelNum
   result.fragment = fragment
 
-proc newHeartBeat*(channelNum: uint16): Frame =
+proc newHeartBeatFrame*(channelNum: uint16): Frame =
   result.new
   result.frameType = ftHeartBeat
   result.channelNum = channelNum
 
-proc newProtocolHeader*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], revision = PROTOCOL_VERSION[2] ): Frame =
+proc newProtocolHeaderFrame*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], revision = PROTOCOL_VERSION[2] ): Frame =
   result.new
   result.frameType = ftProtocolHeader
   result.channelNum = 0
@@ -63,62 +62,52 @@ proc newProtocolHeader*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1]
   result.minor = minor
   result.revision = revision
 
-proc getFrameHeaderInfo*(encoded: InputStream): (uint8, uint16, uint32) =
-  let s = encoded
-  let (_, fType) = s.readBigEndianU8()
-  let (_, chNum) = s.readBigEndianU16()
-  let (_, fSize) = s.readBigEndianU32()
-  return (fType, chNum, fSize)
-
-proc decodeFrame*(encoded: InputStream, startFrame: bool = false): Frame =
-  let s = encoded
+proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Frame] {.async.} =
   if startFrame:
-    encoded.advance(5)
-    let (_, major) = s.readBigEndianU8()
-    let (_, minor) = s.readBigEndianU8()
-    let (_, revision) = s.readBigEndianU8()
-    return newProtocolHeader(major, minor, revision)
-  let(fType, chNum, fSize) = getFrameHeaderInfo(encoded)
-  if encoded.len().uint32 < fSize+1:
-    raise newException(FrameUnmarshalingException, "Not all data received")
+    let header {.used.} = await src.readString(5)
+    let major = await src.readU8()
+    let minor = await src.readU8()
+    let revision = await src.readU8()
+    return newProtocolHeaderFrame(major, minor, revision)
+  let fType = await src.readU8()
+  let chNum = await src.readBEU16()
+  let fSize = await src.readBEU32()
   case fType
   of FRAME_METHOD:
-    let meth: Method = s.decodeMethod()
-    result = newMethod(chNum, meth)
+    let meth: AMQPMethod = await src.decodeMethod()
+    result = newMethodFrame(chNum, meth)
   of FRAME_HEADER:
-    let (_, clsId) = s.readBigEndianU16()
-    discard s.readBigEndianU16()
-    let (_, bodySize) = s.readBigEndianU64()
-    let props: BasicProperties = decodeProperties[BasicProperties](clsId, s)
-    result = newHeader(chNum, bodySize, props)
+    let clsId = await src.readBEU16()
+    let skp {.used.} = await src.readBEU16()
+    let bodySize = await src.readBEU64()
+    let props: BasicProperties = decodeProperties[BasicProperties](clsId, src)
+    result = newHeaderFrame(chNum, bodySize, props)
   of FRAME_BODY:
-    var str = newString(fSize.int)
-    s.readInto(str)
-    str.setLen(fSize.int)
-    result = newBody(chNum, str)
+    let str = await src.readString(fSize.int)
+    result = newBodyFrame(chNum, str)
   of FRAME_HEARTBEAT:
-    result = newHeartBeat(chNum)
+    result = newHeartBeatFrame(chNum)
   else:
     raise newException(InvalidFieldTypeException, "No such field type")
-  let (_, fEnd) = s.readBigEndianU8()
+  let fEnd = await src.readU8()
   if fEnd != FRAME_END:
     raise newException(FrameUnmarshalingException, "Last byte error")
 
-proc encodeFrame*(f: Frame, to: OutputStream) =
+proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
   case f.frameType
   of ftProtocolHeader:
-    to.write("AMQP")
-    to.writeBigEndian8(0.uint8)
-    to.writeBigEndian8(f.major)
-    to.writeBigEndian8(f.minor)
-    to.writeBigEndian8(f.revision)
+    await dest.writeString("AMQP")
+    await dest.write(0.uint8)
+    await dest.write(f.major)
+    await dest.write(f.minor)
+    await dest.write(f.revision)
   of ftHeader:
-    to.writeBigEndian16(BASIC_FRAME_ID)
-    to.writeBigEndian16(0.uint16)
-    to.writeBigEndian64(f.bodySize)
+    await dest.writeBE(BASIC_FRAME_ID)
+    await dest.writeBE(0.uint16)
+    await dest.writeBE(f.bodySize)
   of ftMethod:
-    to.encodeMethod(f.meth)
+    await dest.encodeMethod(f.meth)
   of ftBody:
-    to.write(f.fragment)
+    await dest.writeString(f.fragment)
   else:
     discard

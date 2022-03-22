@@ -34,7 +34,7 @@ type
     ticket*: uint16
     queue*: string
     noWait*: bool
-    arguments*: TableRef[string, DataTable]
+    arguments*: TableRef[string, Field]
     case indexLo*: QueueVariants
     of QUEUE_DECLARE_METHOD:
       passive*: bool
@@ -140,7 +140,7 @@ proc newQueueDeclare*(
   exclusive=false,
   autoDelete=false, 
   noWait=false, 
-  arguments: TableRef[string, DataTable]=nil): (bool, seq[uint16], QueueMethod) =
+  arguments: TableRef[string, Field]=nil): (bool, seq[uint16], QueueMethod) =
   var res = QueueMethod(indexLo: QUEUE_DECLARE_METHOD)
   res.ticket = ticket
   res.queue = queue
@@ -204,7 +204,7 @@ proc newQueueBind*(
   bQueue = "", 
   routingKey = "", 
   noWait=false, 
-  arguments: TableRef[string, DataTable] = nil): (bool, seq[uint16], QueueMethod) =
+  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], QueueMethod) =
   var res = QueueMethod(indexLo: QUEUE_BIND_METHOD)
   res.queue = queue
   res.bQueue = bQueue
@@ -327,7 +327,7 @@ proc newQueueUnbind*(
   queue = "", 
   bQueue = "", 
   routingKey = "", 
-  arguments: TableRef[string, DataTable] = nil): (bool, seq[uint16], QueueMethod) =
+  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], QueueMethod) =
   var res = QueueMethod(indexLo: QUEUE_UNBIND_METHOD)
   res.queue = queue
   res.bQueue = bQueue
