@@ -40,6 +40,14 @@ proc newMethod*(id: uint32): AMQPMethod =
   let (idHi, _) = uint32touints16(id)
   result = AMQPMethod(kind: AMQPMetodKind(idHi), methodId: id)
 
+proc len*(meth: AMQPMethod): int = 
+  result = sizeInt32Uint32
+  case meth.kind
+  of CONNECTION:
+    result.inc(meth.connObj.len)
+  else:
+    raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
+
 proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
   let methodId = await src.readBEU32()
   let meth = newMethod(methodId)
@@ -57,3 +65,4 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.connObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
+  #await dst.flush()

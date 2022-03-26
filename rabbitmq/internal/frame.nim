@@ -6,18 +6,25 @@ import ./exceptions
 import ./methods/all
 import ./properties
 
+const
+  FRAME_METHOD = 1.uint8
+  FRAME_HEADER = 2.uint8
+  FRAME_BODY = 3.uint8
+  FRAME_HEARTBEAT = 8.uint8
+  FRAME_END = 206.uint8
+
 type
   FrameType* = enum
-    ftMethod
-    ftHeader
-    ftBody
-    ftHeartBeat
-    ftProtocolHeader
+    ftProtocolHeader = 0
+    ftMethod = FRAME_METHOD
+    ftHeader = FRAME_HEADER
+    ftBody = FRAME_BODY
+    ftHeartBeat = FRAME_HEARTBEAT
 
   Frame* = ref FrameObj
   FrameObj* = object
-    channelNum: uint16
-    size: uint32
+    channelNum*: uint16
+    size*: uint32
     case frameType*: FrameType
     of ftMethod:
       meth*: AMQPMethod
@@ -35,6 +42,7 @@ type
 
 proc newMethodFrame*(channelNum: uint16, meth: AMQPMethod): Frame =
   result = Frame(frameType: ftMethod, channelNum: channelNum, meth: meth)
+  result.size = meth.len.uint32
 
 proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): Frame =
   result.new
@@ -55,12 +63,7 @@ proc newHeartBeatFrame*(channelNum: uint16): Frame =
   result.channelNum = channelNum
 
 proc newProtocolHeaderFrame*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], revision = PROTOCOL_VERSION[2] ): Frame =
-  result.new
-  result.frameType = ftProtocolHeader
-  result.channelNum = 0
-  result.major = major
-  result.minor = minor
-  result.revision = revision
+  result = Frame(frameType: ftProtocolHeader, channelNum: 0, major: major, minor: minor, revision: revision)
 
 proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Frame] {.async.} =
   if startFrame:
@@ -80,7 +83,7 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
     let clsId = await src.readBEU16()
     let skp {.used.} = await src.readBEU16()
     let bodySize = await src.readBEU64()
-    let props: BasicProperties = decodeProperties[BasicProperties](clsId, src)
+    let props = await src.decodeProperties(clsId)
     result = newHeaderFrame(chNum, bodySize, props)
   of FRAME_BODY:
     let str = await src.readString(fSize.int)
@@ -94,20 +97,25 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
     raise newException(FrameUnmarshalingException, "Last byte error")
 
 proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
-  case f.frameType
-  of ftProtocolHeader:
+  if f.frameType == ftProtocolHeader:
     await dest.writeString("AMQP")
     await dest.write(0.uint8)
     await dest.write(f.major)
     await dest.write(f.minor)
     await dest.write(f.revision)
-  of ftHeader:
-    await dest.writeBE(BASIC_FRAME_ID)
-    await dest.writeBE(0.uint16)
-    await dest.writeBE(f.bodySize)
-  of ftMethod:
-    await dest.encodeMethod(f.meth)
-  of ftBody:
-    await dest.writeString(f.fragment)
   else:
-    discard
+    await dest.write(f.frameType.uint8)
+    await dest.writeBE(f.channelNum)
+    await dest.writeBE(f.size)
+    case f.frameType
+    of ftHeader:
+      await dest.writeBE(BASIC_FRAME_ID)
+      await dest.writeBE(0.uint16)
+      await dest.writeBE(f.bodySize)
+    of ftMethod:
+      await dest.encodeMethod(f.meth)
+    of ftBody:
+      await dest.writeString(f.fragment)
+    else:
+      discard
+    await dest.write(FRAME_END)

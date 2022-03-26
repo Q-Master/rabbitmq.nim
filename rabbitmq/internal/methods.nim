@@ -1,4 +1,4 @@
-import tables
+#[import tables
 import ./methods/access
 import ./methods/basic
 import ./methods/channel
@@ -475,3 +475,4 @@ proc newTxRollback*(): Method =
 proc newTxRollbackOk*(): Method =
   result = Method(indexHi: TX_METHODS)
   (result.syncronous, result.validResponses, result.tx) = tx.newTxRollbackOk()
+]#

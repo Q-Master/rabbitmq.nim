@@ -105,6 +105,12 @@ proc len*(f: Field): int =
   of dtVoid:
     result.inc(0)
 
+proc len*(f: FieldTable): int =
+  result.inc(sizeInt32Uint32)
+  for k,v in f.pairs():
+    result.inc(k.len() + sizeInt8Uint8)
+    result.inc(v.len() + sizeInt8Uint8)
+
 converter asField*(x: int8): Field =
   result = Field(kind: dtByte, byteVal: x)
 
@@ -167,10 +173,10 @@ proc decodeTable*(s: AsyncBufferedSocket): Future[TableRef[string, Field]] {.asy
   var bytesToRead = await s.readBEU32()
   while bytesToRead > 0:
     let key = await s.decodeShortString()
-    bytesToRead.dec(key.len() + 1)
+    bytesToRead.dec(key.len() + sizeInt8Uint8)
     let value = await s.decodeField()
     result[key] = value
-    bytesToRead.dec(value.len())
+    bytesToRead.dec(value.len()+sizeInt8Uint8)
 
 proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
   var kind = await s.readU8()
@@ -240,9 +246,9 @@ proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
 #----------------------------------------------------------------------------------#
 
 proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.}
-proc encodeArray*(s: AsyncBufferedSocket, arr: seq[Field]) {.async.} =
-  await s.write(arr.len().uint32)
-  for elem in arr:
+proc encodeArray*(s: AsyncBufferedSocket, arr: Field) {.async.} =
+  await s.write(arr.len().uint32 - sizeInt32Uint32.uint32)
+  for elem in arr.arrayVal:
     await s.encodeField(elem)
 
 proc encodeShortString*(s: AsyncBufferedSocket, str: string) {.async.} =
@@ -253,9 +259,9 @@ proc encodeString*(s: AsyncBufferedSocket, str: string) {.async.} =
   await s.write(str.len().uint32)
   await s.writeString(str)
 
-proc encodeTable*(s: AsyncBufferedSocket, table: TableRef[string, Field]) {.async.} =
-  await s.write(table.len().uint32)
-  for k, v in table.pairs():
+proc encodeTable*(s: AsyncBufferedSocket, table: Field) {.async.} =
+  await s.writeBE(table.len().uint32 - sizeInt32Uint32.uint32)
+  for k, v in table.tableVal.pairs():
     await s.encodeShortString(k)
     await s.encodeField(v)
 
@@ -309,12 +315,12 @@ proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.} =
     let x {.used.} = await s.send(data.bytesVal)
   of dtArray:
     await s.write('A'.uint8)
-    await s.encodeArray(data.arrayVal)
+    await s.encodeArray(data)
   of dtTimestamp:
     await s.write('T'.uint8)
     await s.writeBE(data.tsVal.toUnix())
   of dtTable:
     await s.write('F'.uint8)
-    await s.encodeTable(data.tableVal)    
+    await s.encodeTable(data)    
   of dtVoid:
     await s.write('V'.uint8)

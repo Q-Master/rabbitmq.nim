@@ -139,12 +139,16 @@ proc newRabbitMQConn(): RabbitMQConn =
   result.new()
   result.inuse = false
   result.connected = false
-  result.sock = newAsyncBufferedSocket(inBufSize = RABBITMQ_MAX_BUF, outBufSize = RABBITMQ_MAX_BUF)
+  #result.sock = newAsyncBufferedSocket(inBufSize = RABBITMQ_MAX_BUF, outBufSize = RABBITMQ_MAX_BUF)
+  result.sock = newAsyncBufferedSocket(inBufSize = RABBITMQ_MAX_BUF)
 
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   let header = newProtocolHeaderFrame(PROTOCOL_VERSION[0], PROTOCOL_VERSION[1], PROTOCOL_VERSION[2])
+  echo "Sending the header"
   await conn.sock.encodeFrame(header)
+  echo "Waiting for START_METHOD"
   let start = await conn.waitMethod(CONNECTION_START_METHOD_ID)
+  echo "Got START_METHOD"
   if start.connObj.versionMajor != PROTOCOL_VERSION[0] or start.connObj.versionMinor != PROTOCOL_VERSION[1]:
     raise newException(AMQPIncompatibleProtocol, "Incompatible protocol version")
   conn.serverProps = start.connObj.serverProperties
@@ -167,4 +171,5 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   }.newTable
   let meth = newMethod(CONNECTION_START_OK_METHOD_ID)
   meth.connObj = newConnectionStartOk(clientProps, $authMethod, authBytes)
-  await conn.sock.encodeMethod(meth)
+  let frame = newMethodFrame(0, meth)
+  await conn.sock.encodeFrame(frame)

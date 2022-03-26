@@ -50,6 +50,23 @@ type
     else:
       discard
 
+proc len*(meth: AMQPConnection): int =
+  result = 0
+  case meth.kind:
+  of AMQP_CONNECTION_START_SUBMETHOD:
+    result.inc(sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.serverProperties.len)
+    result.inc(meth.mechanisms.len + sizeInt32Uint32)
+    result.inc(meth.locales.len + sizeInt32Uint32)
+  of AMQP_CONNECTION_START_OK_SUBMETHOD:
+    result.inc(meth.clientProps.len)
+    result.inc(meth.mechanism.len + sizeInt8Uint8)
+    result.inc(meth.response.len + sizeInt32Uint32)
+    result.inc(meth.locale.len + sizeInt8Uint8)
+  else:
+      raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
 proc decode*(s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.} =
   case t:
   of CONNECTION_START_METHOD_ID:
@@ -62,7 +79,7 @@ proc decode*(s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.
   of CONNECTION_START_OK_METHOD_ID:
     result = AMQPConnection(kind: AMQP_CONNECTION_START_OK_SUBMETHOD)
     result.clientProps = await s.decodeTable()
-    result.mechanism = await s.decodeString()
+    result.mechanism = await s.decodeShortString()
     result.response = await s.decodeString()
     result.locale = await s.decodeShortString()
   else:
@@ -78,11 +95,21 @@ proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
     await dst.encodeString(meth.locales)
   of AMQP_CONNECTION_START_OK_SUBMETHOD:
     await dst.encodeTable(meth.clientProps)
-    await dst.encodeString(meth.mechanism)
+    await dst.encodeShortString(meth.mechanism)
     await dst.encodeString(meth.response)
     await dst.encodeShortString(meth.locale)
   else:
       raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+proc newConnectionStart*(major, minor: uint8, serverprops: TableRef[string, Field], mechanisms, locales: string): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_START_SUBMETHOD, 
+    versionMajor: major,
+    versionMinor: minor,
+    serverProperties: serverprops, 
+    mechanisms: mechanisms, 
+    locales: locales
+  )
 
 proc newConnectionStartOk*(clientProps: TableRef[string, Field], mechanism="PLAIN", response="", locale="en_US"): AMQPConnection =
   result = AMQPConnection(

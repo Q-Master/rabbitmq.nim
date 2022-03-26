@@ -1,5 +1,3 @@
-import std/endians
-
 type
   U32t2U16* {.union.} = object
     unsigned32: uint32
