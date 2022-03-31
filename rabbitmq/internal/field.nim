@@ -1,4 +1,4 @@
-import std/[times, tables, asyncdispatch]
+import std/[times, tables, asyncdispatch, macros]
 import pkg/networkutils/buffered_socket
 import ./exceptions
 import ./spec
@@ -30,7 +30,7 @@ type
     unsigned32: uint32
     unsigned16: array[2, uint16]
 
-  FieldTable* = TableRef[string, Field]
+  FieldTable* = OrderedTableRef[string, Field]
 
   Field* = ref FieldObj
   FieldObj* = object
@@ -68,7 +68,7 @@ type
     of dtTimestamp:
       tsVal*: Time
     of dtTable:
-      tableVal*: TableRef[string, Field]
+      tableVal*: FieldTable
     of dtVoid:
       discard
 
@@ -111,44 +111,121 @@ proc len*(f: FieldTable): int =
     result.inc(k.len() + sizeInt8Uint8)
     result.inc(v.len() + sizeInt8Uint8)
 
-converter asField*(x: int8): Field =
+proc `$`*(f: Field): string =
+  case f.kind
+  of dtBool:
+    result = dollars.`$`(f.boolVal)
+  of dtByte:
+    result = dollars.`$`(f.byteVal)
+  of dtUByte:
+    result = dollars.`$`(f.uByteVal)
+  of dtShort, dtSignedShort:
+    result = dollars.`$`(f.shortVal)
+  of dtUShort:
+    result = dollars.`$`(f.uShortVal)
+  of dtInt:
+    result = dollars.`$`(f.intVal)
+  of dtUInt:
+    result = dollars.`$`(f.uIntVal)
+  of dtLong:
+    result = dollars.`$`(f.longVal)
+  of dtULong:
+    result = dollars.`$`(f.uLongVal)
+  of dtFloat:
+    result = dollars.`$`(f.floatVal)
+  of dtDouble:
+    result = dollars.`$`(f.doubleVal)
+  of dtDecimal:
+    result = dollars.`$`(f.decimalVal)
+  of dtString:
+    result = "\"" & f.stringVal & "\""
+  of dtBytes:
+    result = dollars.`$`(f.bytesVal)
+  of dtArray:
+    result = dollars.`$`(f.arrayVal)
+  of dtTimestamp:
+    result = $f.tsVal
+  of dtTable:
+    result = tables.`$`(f.tableVal)
+  of dtVoid:
+    result = "void"
+
+proc asField*(x: int8): Field =
   result = Field(kind: dtByte, byteVal: x)
 
-converter asField*(x: uint8): Field =
+proc asField*(x: uint8): Field =
   result = Field(kind: dtUByte, uByteVal: x)
 
-converter asField*(x: int16): Field =
+proc asField*(x: int16): Field =
   result = Field(kind: dtShort, shortVal: x)
 
-converter asField*(x: uint16): Field =
+proc asField*(x: uint16): Field =
   result = Field(kind: dtUShort, uShortVal: x)
 
-converter asField*(x: int32): Field =
+proc asField*(x: int32): Field =
   result = Field(kind: dtInt, intVal: x)
 
-converter asField*(x: uint32): Field =
+proc asField*(x: uint32): Field =
   result = Field(kind: dtUInt, uIntVal: x)
 
-converter asField*(x: int64): Field =
+proc asField*(x: int64): Field =
   result = Field(kind: dtLong, longVal: x)
 
-converter asField*(x: uint64): Field =
+proc asField*(x: uint64): Field =
   result = Field(kind: dtULong, uLongVal: x)
 
-converter asField*(x: float32): Field =
+proc asField*(x: float32): Field =
   result = Field(kind: dtFloat, floatVal: x)
 
-converter asField*(x: float64): Field =
+proc asField*(x: float64): Field =
   result = Field(kind: dtDouble, doubleVal: x)
 
-converter asField*(x: string): Field =
+proc asField*(x: string): Field =
   result = Field(kind: dtString, stringVal: x)
 
-converter asField*(x: bool): Field =
+proc asField*(x: bool): Field =
   result = Field(kind: dtBool, boolVal: x)
 
-converter asField*(x: FieldTable): Field =
+proc asField*(x: FieldTable): Field =
   result = Field(kind: dtTable, tableVal: x)
+
+proc newFieldTable*(initialSize = defaultInitialSize): FieldTable =
+  result = newOrderedTable[string, Field]()
+
+proc newFieldTable*(pairs: openArray[(string, Field)]): FieldTable =
+  result = newOrderedTable[string, Field](pairs.len)
+  for key, val in items(pairs): result[key] = val
+
+proc asFieldTableImpl(x: NimNode, initial=false): NimNode =
+  case x.kind
+  of nnkBracket: # array
+    if x.len == 0: return newCall(bindSym"newFieldTable")
+    result = newNimNode(nnkTableConstr)
+    for i in 0 ..< x.len:
+      result.add newTree(nnkExprColonExpr, x[i][1][0], asFieldTableImpl(x[i][1][1]))
+    result = newCall(bindSym("newFieldTable", brOpen), result)
+  of nnkTableConstr: # object
+    if x.len == 0: return newCall(bindSym"newFieldTable")
+    result = newNimNode(nnkTableConstr)
+    for i in 0 ..< x.len:
+      x[i].expectKind nnkExprColonExpr
+      result.add newTree(nnkExprColonExpr, x[i][0], asFieldTableImpl(x[i][1]))
+    result = newCall(bindSym("newFieldTable", brOpen), result)
+    if not initial:
+      result = newCall(bindSym("asField", brOpen), result)
+  of nnkCurly: # empty object
+    x.expectLen(0)
+    result = newCall(bindSym"newFieldTable")
+  of nnkNilLit:
+    result = newCall(bindSym("asField", brOpen), x)
+  of nnkPar:
+    if x.len == 1: result = asFieldTableImpl(x[0])
+    else: result = newCall(bindSym("asField", brOpen), x)
+  else:
+    result = newCall(bindSym("asField", brOpen), x)
+
+macro asFieldTable*(x: untyped): untyped =
+  result = asFieldTableImpl(x, true)
 
 proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.}
 proc decodeArray*(s: AsyncBufferedSocket): Future[seq[Field]] {.async.} =
@@ -168,8 +245,8 @@ proc decodeString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.readBEU32()
   result = await s.readString(size.int)
 
-proc decodeTable*(s: AsyncBufferedSocket): Future[TableRef[string, Field]] {.async.} =
-  result = newTable[string, Field]()
+proc decodeTable*(s: AsyncBufferedSocket): Future[FieldTable] {.async.} =
+  result = newFieldTable()
   var bytesToRead = await s.readBEU32()
   while bytesToRead > 0:
     let key = await s.decodeShortString()
@@ -253,15 +330,17 @@ proc encodeArray*(s: AsyncBufferedSocket, arr: Field) {.async.} =
 
 proc encodeShortString*(s: AsyncBufferedSocket, str: string) {.async.} =
   await s.write(str.len().uint8)
-  await s.writeString(str)
+  if str.len > 0:
+    await s.writeString(str)
 
 proc encodeString*(s: AsyncBufferedSocket, str: string) {.async.} =
-  await s.write(str.len().uint32)
-  await s.writeString(str)
+  await s.writeBE(str.len().uint32)
+  if str.len > 0:
+    await s.writeString(str)
 
-proc encodeTable*(s: AsyncBufferedSocket, table: Field) {.async.} =
+proc encodeTable*(s: AsyncBufferedSocket, table: FieldTable) {.async.} =
   await s.writeBE(table.len().uint32 - sizeInt32Uint32.uint32)
-  for k, v in table.tableVal.pairs():
+  for k, v in table:
     await s.encodeShortString(k)
     await s.encodeField(v)
 
@@ -302,13 +381,13 @@ proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.} =
     await s.write(data.doubleVal)
   of dtDecimal:
     await s.write('D'.uint8)
-    await s.writeString(data.decimalVal)
+    await s.encodeString(data.decimalVal)
   of dtSignedShort:
     await s.write('s'.uint8)
     await s.writeBE(data.shortVal)
   of dtString:
     await s.write('S'.uint8)
-    await s.writeString(data.stringVal)
+    await s.encodeString(data.stringVal)
   of dtBytes:
     await s.write('x'.uint8)
     await s.writeBE(data.bytesVal.len.uint32)
@@ -321,6 +400,6 @@ proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.} =
     await s.writeBE(data.tsVal.toUnix())
   of dtTable:
     await s.write('F'.uint8)
-    await s.encodeTable(data)    
+    await s.encodeTable(data.tableVal)    
   of dtVoid:
     await s.write('V'.uint8)

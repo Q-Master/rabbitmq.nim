@@ -29,35 +29,34 @@ type
     CONFIRM_PROPERTIES = CONFIRM_PROPERTIES_ID
     TX_PROPERTIES = TX_PROPERTIES_ID
 
-  BasicPropertiesFlag* {.size: sizeof(uint32).} = enum
-    BASIC_PROPERTIES_FLAG_UNUSED_BIT_0     #0
-    BASIC_PROPERTIES_FLAG_UNUSED_BIT_1     #1
-    BASIC_PROPERTIES_FLAG_CLUSTER_ID       #2
-    BASIC_PROPERTIES_FLAG_APP_ID           #3
-    BASIC_PROPERTIES_FLAG_USER_ID          #4
-    BASIC_PROPERTIES_FLAG_TYPE             #5
-    BASIC_PROPERTIES_FLAG_TIMESTAMP        #6
-    BASIC_PROPERTIES_FLAG_MESSAGE_ID       #7
-    BASIC_PROPERTIES_FLAG_EXPIRATION       #8
-    BASIC_PROPERTIES_FLAG_REPLY_TO         #9
-    BASIC_PROPERTIES_FLAG_CORRELATION_ID   #10
-    BASIC_PROPERTIES_FLAG_PRIORITY         #11
-    BASIC_PROPERTIES_FLAG_DELIVERY_MODE    #12
-    BASIC_PROPERTIES_FLAG_HEADERS          #13
-    BASIC_PROPERTIES_FLAG_CONTENT_ENCODING #14
-    BASIC_PROPERTIES_FLAG_CONTENT_TYPE     #15
-  
-  BasicPropertiesFlags = set[BasicPropertiesFlag]
-  
+  BasicPropertiesFlags* = object
+    unused_0_1 {.bitsize: 2.}: uint8
+    clusterId* {.bitsize: 1.}: bool
+    appId* {.bitsize: 1.}: bool
+    userId* {.bitsize: 1.}: bool
+    pType* {.bitsize: 1.}: bool
+    timestamp* {.bitsize: 1.}: bool
+    messageId* {.bitsize: 1.}: bool
+    expiration* {.bitsize: 1.}: bool
+    replyTo* {.bitsize: 1.}: bool
+    correlationId* {.bitsize: 1.}: bool
+    priority* {.bitsize: 1.}: bool
+    deliveryMode* {.bitsize: 1.}: bool
+    headers* {.bitsize: 1.}: bool
+    contentEncoding* {.bitsize: 1.}: bool
+    contentType* {.bitsize: 1.}: bool
+    unused_16_31 {.bitsize: 16.}: uint16
+
+
   Properties* = ref PropertiesObj
   PropertiesObj* = object of RootObj
     flags*: uint32
-    case kind: PropertiesKind
+    case kind*: PropertiesKind
     of BASIC_PROPERTIES:
       basicFlags*: BasicPropertiesFlags
       contentType*: ref string
       contentEncoding*: ref string
-      headers*: TableRef[string, Field]
+      headers*: FieldTable
       deliveryMode*: uint8
       priority*: uint8
       correlationId*: ref string
@@ -88,34 +87,34 @@ proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties]
   case id:
   of BASIC_PROPERTIES_ID:
     result.basicFlags = cast[BasicPropertiesFlags](flags)
-    if BASIC_PROPERTIES_FLAG_CONTENT_TYPE in result.basicFlags:
+    if result.basicFlags.contentType:
       result.contentType[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_CONTENT_ENCODING in result.basicFlags:
+    if result.basicFlags.contentEncoding:
       result.contentEncoding[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_HEADERS in result.basicFlags:
+    if result.basicFlags.headers:
       result.headers = await src.decodeTable()
-    if BASIC_PROPERTIES_FLAG_DELIVERY_MODE in result.basicFlags:
+    if result.basicFlags.deliveryMode:
       result.deliveryMode = await src.readU8()
-    if BASIC_PROPERTIES_FLAG_PRIORITY in result.basicFlags:
+    if result.basicFlags.priority:
       result.priority = await src.readU8()
-    if BASIC_PROPERTIES_FLAG_CORRELATION_ID in result.basicFlags:
+    if result.basicFlags.correlationId:
       result.correlationId[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_REPLY_TO in result.basicFlags:
+    if result.basicFlags.replyTo:
       result.replyTo[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_EXPIRATION in result.basicFlags:
+    if result.basicFlags.expiration:
       result.expiration[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_MESSAGE_ID in result.basicFlags:
+    if result.basicFlags.messageId:
       result.messageId[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_TIMESTAMP in result.basicFlags:
+    if result.basicFlags.timestamp:
       let ts = await src.readBE64()
       result.timestamp[] = ts.fromUnix()
-    if BASIC_PROPERTIES_FLAG_TYPE in result.basicFlags:
+    if result.basicFlags.pType:
       result.pType[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_USER_ID in result.basicFlags:
+    if result.basicFlags.userId:
       result.userId[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_APP_ID in result.basicFlags:
+    if result.basicFlags.appId:
       result.appId[] = await src.decodeShortString()
-    if BASIC_PROPERTIES_FLAG_CLUSTER_ID in result.basicFlags:
+    if result.basicFlags.clusterId:
       result.clusterId[] = await src.decodeShortString()
   else:
     discard
@@ -133,34 +132,34 @@ proc encodeProperties*(p: Properties, dst: AsyncBufferedSocket): Future[Properti
       break
   case p.kind:
   of BASIC_PROPERTIES:
-    if BASIC_PROPERTIES_FLAG_CONTENT_TYPE in p.basicFlags:
+    if p.basicFlags.contentType:
       await dst.encodeShortString(p.contentType[])
-    if BASIC_PROPERTIES_FLAG_CONTENT_ENCODING in p.basicFlags:
+    if p.basicFlags.contentEncoding:
       await dst.encodeShortString(p.contentEncoding[])
-    if BASIC_PROPERTIES_FLAG_HEADERS in p.basicFlags:
+    if p.basicFlags.headers:
       await dst.encodeTable(p.headers)
-    if BASIC_PROPERTIES_FLAG_DELIVERY_MODE in p.basicFlags:
+    if p.basicFlags.deliveryMode:
       await dst.write(p.deliveryMode)
-    if BASIC_PROPERTIES_FLAG_PRIORITY in p.basicFlags:
+    if p.basicFlags.priority:
       await dst.write(p.priority)
-    if BASIC_PROPERTIES_FLAG_CORRELATION_ID in p.basicFlags:
+    if p.basicFlags.correlationId:
       await dst.encodeShortString(p.correlationId[])
-    if BASIC_PROPERTIES_FLAG_REPLY_TO in p.basicFlags:
+    if p.basicFlags.replyTo:
       await dst.encodeShortString(p.replyTo[])
-    if BASIC_PROPERTIES_FLAG_EXPIRATION in p.basicFlags:
+    if p.basicFlags.expiration:
       await dst.encodeShortString(p.expiration[])
-    if BASIC_PROPERTIES_FLAG_MESSAGE_ID in p.basicFlags:
+    if p.basicFlags.messageId:
       await dst.encodeShortString(p.messageId[])
-    if BASIC_PROPERTIES_FLAG_TIMESTAMP in p.basicFlags:
+    if p.basicFlags.timestamp:
       let ts = p.timestamp[].toUnix()
       await dst.writeBE(ts)
-    if BASIC_PROPERTIES_FLAG_TYPE in p.basicFlags:
+    if p.basicFlags.pType:
       await dst.encodeShortString(p.pType[])
-    if BASIC_PROPERTIES_FLAG_USER_ID in p.basicFlags:
+    if p.basicFlags.userId:
       await dst.encodeShortString(p.userId[])
-    if BASIC_PROPERTIES_FLAG_APP_ID in p.basicFlags:
+    if p.basicFlags.appId:
       await dst.encodeShortString(p.appId[])
-    if BASIC_PROPERTIES_FLAG_CLUSTER_ID in p.basicFlags:
+    if p.basicFlags.clusterId:
       await dst.encodeShortString(p.clusterId[])
   else:
     discard

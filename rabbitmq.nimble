@@ -6,7 +6,7 @@ license     = "MIT"
 author      = AUTHOR
 
 # Dependencies
-requires "nim >= 0.20.00", "https://github.com/yglukhov/iface", "networkutils >= 0.4"
+requires "nim >= 0.20.00", "https://github.com/yglukhov/iface", "networkutils >= 0.5.1"
 
 task test, "tests":
   let tests = @["connection"]

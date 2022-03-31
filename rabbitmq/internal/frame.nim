@@ -75,6 +75,7 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
   let fType = await src.readU8()
   let chNum = await src.readBEU16()
   let fSize = await src.readBEU32()
+  echo "Got Frame: ", fType, " ", chNum," ", fSize
   case fType
   of FRAME_METHOD:
     let meth: AMQPMethod = await src.decodeMethod()
@@ -109,7 +110,7 @@ proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
     await dest.writeBE(f.size)
     case f.frameType
     of ftHeader:
-      await dest.writeBE(BASIC_FRAME_ID)
+      await dest.writeBE(f.props.kind.uint16)
       await dest.writeBE(0.uint16)
       await dest.writeBE(f.bodySize)
     of ftMethod:
@@ -119,3 +120,5 @@ proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
     else:
       discard
     await dest.write(FRAME_END)
+  #dest.showBuffer
+  await dest.flush()

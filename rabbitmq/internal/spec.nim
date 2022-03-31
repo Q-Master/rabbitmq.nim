@@ -1,11 +1,13 @@
 import tables
 
-const PROTOCOL_VERSION* = (0.uint8, 9.uint8, 1.uint8)
-const DEFAULT_PORT* = 5672
-const FRAME_HEADER_SIZE* = 7
-const FRAME_END_SIZE* = 1
-const BASIC_FRAME_ID* = 60.uint16
-const DECIMAL_VAL_LENGTH* = 5
+const
+  PROTOCOL_VERSION* = (0.uint8, 9.uint8, 1.uint8)
+  DEFAULT_PORT* = 5672
+  FRAME_HEADER_SIZE* = 7
+  DECIMAL_VAL_LENGTH* = 5
+  AMQP_FRAME_MAX* = 1024*131
+  #AMQP_FRAME_MAX* = 1024
+  DEFAULT_POOLSIZE* = 5
 
 let DEFAULT_PORTS* = {
   "amqp": 5672,

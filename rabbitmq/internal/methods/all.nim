@@ -1,6 +1,7 @@
-import std/[asyncdispatch]
+import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../util/endians
+import ../field
 import ../exceptions
 import ./connection
 
@@ -66,3 +67,29 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
+
+#--
+
+proc newConnectionStartMethod*(major, minor: uint8, serverprops: FieldTable, mechanisms, locales: string): AMQPMethod =
+  result = newMethod(CONNECTION_START_METHOD_ID)
+  result.connObj = newConnectionStart(major, minor, serverprops, mechanisms, locales)
+
+proc newConnectionStartOkMethod*(clientProps: FieldTable, mechanism="PLAIN", response="", locale="en_US"): AMQPMethod =
+  result = newMethod(CONNECTION_START_OK_METHOD_ID)
+  result.connObj = newConnectionStartOk(clientProps, mechanism, response, locale)
+
+proc newConnectionTuneMethod*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPMethod =
+  result = newMethod(CONNECTION_TUNE_METHOD_ID)
+  result.connObj = newConnectionTune(channelMax, frameMax, heartbeat)
+
+proc newConnectionTuneOkMethod*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPMethod =
+  result = newMethod(CONNECTION_TUNE_OK_METHOD_ID)
+  result.connObj = newConnectionTuneOk(channelMax, frameMax, heartbeat)
+
+proc newConnectionOpenMethod*(virtualHost: string, caps: string, insist: bool): AMQPMethod =
+  result = newMethod(CONNECTION_OPEN_METHOD_ID)
+  result.connObj = newConnectionOpen(virtualHost, caps, insist)
+
+proc newConnectionOpenOkMethod*(knownHosts: string): AMQPMethod =
+  result = newMethod(CONNECTION_OPEN_OK_METHOD_ID)
+  result.connObj = newConnectionOpenOk(knownHosts)

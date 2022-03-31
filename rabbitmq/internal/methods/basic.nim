@@ -69,7 +69,7 @@ type
     of BASIC_CONSUME_METHOD:
       noLocal*: bool
       exclusive*: bool
-      arguments*: TableRef[string, Field]
+      arguments*: FieldTable
     of BASIC_PUBLISH_METHOD:
       mandatory*: bool
       immediate*: bool
@@ -266,7 +266,7 @@ proc newBasicConsume*(
   noAck=false, 
   exclusive=false, 
   noWait=false, 
-  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], BasicMethod) =
+  arguments: FieldTable = nil): (bool, seq[uint16], BasicMethod) =
   var res = BasicMethod(indexLo: BASIC_CONSUME_METHOD)
   res.ticket = ticket
   res.queue = queue

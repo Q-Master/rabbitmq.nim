@@ -55,7 +55,10 @@ proc fromURL*(url: string): RMQAddress =
   if url.contains('@'):
     result.login.username = rmqUri.username
     result.login.password = rmqUri.password
-  result.vhost = (if rmqUri.path.len == 0: "/" else: rmqUri.path)
+  if rmqUri.path[0] == '/' and rmqUri.path.len == 1:
+    result.vhost = rmqUri.path
+  else:
+    result.vhost = (if rmqUri.path.len == 0: "/" else: rmqUri.path[1 .. ^1])
 
   if rmqUri.query.len > 0:
     let kvarr = rmqUri.query.split('&')

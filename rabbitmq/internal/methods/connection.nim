@@ -33,20 +33,41 @@ type
     AMQP_CONNECTION_BLOCKED_SUBMETHOD = (CONNECTION_BLOCKED_METHOD_ID and 0x0000FFFF).uint16
     AMQP_CONNECTION_UNBLOCKED_SUBMETHOD = (CONNECTION_UNBLOCKED_METHOD_ID and 0x0000FFFF).uint16
 
+  AMQPConnectionOpenBits* = object
+    insist* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+    
   AMQPConnection* = ref AMQPConnectionObj
   AMQPConnectionObj* = object of RootObj
-    case kind: AMQPConnectionKind
+    case kind*: AMQPConnectionKind
     of AMQP_CONNECTION_START_SUBMETHOD:
       versionMajor*: uint8
       versionMinor*: uint8
-      serverProperties*: TableRef[string, Field]
+      serverProperties*: FieldTable
       mechanisms*: string
       locales*: string
     of AMQP_CONNECTION_START_OK_SUBMETHOD:
-      clientProps*: TableRef[string, Field]
+      clientProps*: FieldTable
       mechanism*: string
       response*: string
       locale*: string
+    of AMQP_CONNECTION_TUNE_SUBMETHOD, AMQP_CONNECTION_TUNE_OK_SUBMETHOD:
+      channelMax*: uint16
+      frameMax*: uint32
+      heartbeat*: uint16
+    of AMQP_CONNECTION_CLOSE_SUBMETHOD:
+      replyCode*: uint16
+      replyText*: string
+      classId*: uint16
+      methodId*: uint16
+    of AMQP_CONNECTION_CLOSE_OK_SUBMETHOD:
+      discard
+    of AMQP_CONNECTION_OPEN_SUBMETHOD:
+      virtualHost*: string
+      capabilities*: string
+      openFlags*: AMQPConnectionOpenBits
+    of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
+      knownHosts: string
     else:
       discard
 
@@ -64,6 +85,23 @@ proc len*(meth: AMQPConnection): int =
     result.inc(meth.mechanism.len + sizeInt8Uint8)
     result.inc(meth.response.len + sizeInt32Uint32)
     result.inc(meth.locale.len + sizeInt8Uint8)
+  of AMQP_CONNECTION_TUNE_SUBMETHOD, AMQP_CONNECTION_TUNE_OK_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(sizeInt32Uint32)
+    result.inc(sizeInt16Uint16)
+  of AMQP_CONNECTION_CLOSE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.replyText.len + sizeInt8Uint8)
+    result.inc(sizeInt16Uint16)
+    result.inc(sizeInt16Uint16)
+  of AMQP_CONNECTION_CLOSE_OK_SUBMETHOD:
+    discard
+  of AMQP_CONNECTION_OPEN_SUBMETHOD:
+    result.inc(meth.virtualHost.len + sizeInt8Uint8)
+    result.inc(meth.capabilities.len + sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
+    result.inc(meth.knownHosts.len + sizeInt8Uint8)
   else:
       raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
@@ -82,10 +120,38 @@ proc decode*(s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.
     result.mechanism = await s.decodeShortString()
     result.response = await s.decodeString()
     result.locale = await s.decodeShortString()
+  of CONNECTION_TUNE_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_TUNE_SUBMETHOD)
+    result.channelMax = await s.readBEU16()
+    result.frameMax = await s.readBEU32()
+    result.heartbeat = await s.readBEU16()
+  of CONNECTION_TUNE_OK_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_TUNE_OK_SUBMETHOD)
+    result.channelMax = await s.readBEU16()
+    result.frameMax = await s.readBEU32()
+    result.heartbeat = await s.readBEU16()
+  of CONNECTION_CLOSE_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_SUBMETHOD)
+    result.replyCode = await s.readBEU16()
+    result.replyText = await s.decodeShortString()
+    result.classId = await s.readBEU16()
+    result.methodId = await s.readBEU16()
+  of CONNECTION_CLOSE_OK_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
+  of CONNECTION_OPEN_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_OPEN_SUBMETHOD)
+    result.virtualHost = await s.decodeShortString()
+    result.capabilities = await s.decodeShortString()
+    let insist: uint8 = await s.readU8()
+    result.openFlags = cast[AMQPConnectionOpenBits](insist)
+  of CONNECTION_OPEN_OK_METHOD_ID:
+    result = AMQPConnection(kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD)
+    result.knownHosts = await s.decodeShortString()
   else:
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
+  echo $meth.kind
   case meth.kind:
   of AMQP_CONNECTION_START_SUBMETHOD:
     await dst.write(meth.versionMajor)
@@ -98,10 +164,27 @@ proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
     await dst.encodeShortString(meth.mechanism)
     await dst.encodeString(meth.response)
     await dst.encodeShortString(meth.locale)
+  of AMQP_CONNECTION_TUNE_SUBMETHOD, AMQP_CONNECTION_TUNE_OK_SUBMETHOD:
+    await dst.writeBE(meth.channelMax)
+    await dst.writeBE(meth.frameMax)
+    await dst.writeBE(meth.heartbeat)
+  of AMQP_CONNECTION_CLOSE_SUBMETHOD:
+    await dst.writeBE(meth.replyCode)
+    await dst.encodeShortString(meth.replyText)
+    await dst.writeBE(meth.classId)
+    await dst.writeBE(meth.methodId)
+  of AMQP_CONNECTION_CLOSE_OK_SUBMETHOD:
+    discard
+  of AMQP_CONNECTION_OPEN_SUBMETHOD:
+    await dst.encodeShortString(meth.virtualHost)
+    await dst.encodeShortString(meth.capabilities)
+    await dst.write(cast[uint8](meth.openFlags))
+  of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
+    await dst.encodeShortString(meth.knownHosts)
   else:
       raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc newConnectionStart*(major, minor: uint8, serverprops: TableRef[string, Field], mechanisms, locales: string): AMQPConnection =
+proc newConnectionStart*(major, minor: uint8, serverprops: FieldTable, mechanisms, locales: string): AMQPConnection =
   result = AMQPConnection(
     kind: AMQP_CONNECTION_START_SUBMETHOD, 
     versionMajor: major,
@@ -111,13 +194,43 @@ proc newConnectionStart*(major, minor: uint8, serverprops: TableRef[string, Fiel
     locales: locales
   )
 
-proc newConnectionStartOk*(clientProps: TableRef[string, Field], mechanism="PLAIN", response="", locale="en_US"): AMQPConnection =
+proc newConnectionStartOk*(clientProps: FieldTable, mechanism="PLAIN", response="", locale="en_US"): AMQPConnection =
   result = AMQPConnection(
     kind: AMQP_CONNECTION_START_OK_SUBMETHOD, 
     clientProps: clientProps, 
     mechanism: mechanism, 
     response: response, 
     locale: locale
+  )
+
+proc newConnectionTune*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_TUNE_SUBMETHOD, 
+    channelMax: channelMax, 
+    frameMax: frameMax, 
+    heartbeat: heartbeat
+  )
+
+proc newConnectionTuneOk*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_TUNE_OK_SUBMETHOD, 
+    channelMax: channelMax, 
+    frameMax: frameMax, 
+    heartbeat: heartbeat
+  )
+
+proc newConnectionOpen*(virtualHost: string, caps: string, insist: bool): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_OPEN_SUBMETHOD, 
+    virtualHost: virtualHost, 
+    capabilities: caps
+  )
+  result.openFlags.insist = insist
+
+proc newConnectionOpenOk*(knownHosts: string): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD, 
+    knownHosts: knownHosts
   )
 
 #[
