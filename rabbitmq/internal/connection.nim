@@ -1,5 +1,6 @@
 import std/[asyncdispatch, asyncnet, times, tables]
 import pkg/networkutils/buffered_socket
+import ./util/lists
 import ./methods/all
 import ./frame
 import ./address
@@ -9,8 +10,8 @@ import ./field
 import ./auth
 
 type
-  RabbitMQ = ref RabbitMQObj
-  RabbitMQObj = object of RootObj
+  RabbitMQ* = ref RabbitMQObj
+  RabbitMQObj* = object of RootObj
     pool: seq[RabbitMQConn]
     current: int
     timeout: int
@@ -27,38 +28,7 @@ type
     channelMax: uint16
     frameMax: uint32
     heartbeat: uint16
-
-#[
-uint16_t ConnectionImpl::add(const std::shared_ptr<ChannelImpl> &channel)
-{
-    // check if we have exceeded the limit already
-    if (_maxChannels > 0 && _channels.size() >= _maxChannels) return 0;
-
-    // keep looping to find an id that is not in use
-    while (true)
-    {
-        // is this id in use?
-        if (_nextFreeChannel > 0 && _channels.find(_nextFreeChannel) == _channels.end()) break;
-
-        // id is in use, move on
-        _nextFreeChannel++;
-    }
-
-    // we have a new channel
-    _channels[_nextFreeChannel] = channel;
-
-    // done
-    return _nextFreeChannel++;
-}
-void ConnectionImpl::remove(const ChannelImpl *channel)
-{
-    // skip zero channel
-    if (channel->id() == 0) return;
-
-    // remove it
-    _channels.erase(channel->id());
-}
-]#
+    frames: SinglyLinkedList[Frame]
 
 const
   DEFAULT_POOLSIZE = 5
@@ -176,9 +146,15 @@ proc newRabbitMQConn(): RabbitMQConn =
   result.connected = false
   result.sock = newAsyncBufferedSocket(inBufSize = AMQP_FRAME_MAX, outBufSize = AMQP_FRAME_MAX)
   #result.sock = newAsyncBufferedSocket(inBufSize = AMQP_FRAME_MAX)
+  result.serverProps = nil
   result.channelMax = 0
   result.frameMax = AMQP_FRAME_MAX
   result.heartbeat = 0
+  result.frames = initSinglyLinkedList[Frame]()
+
+proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.} =
+  let frame = newMethodFrame(channel, meth)
+  await conn.sock.encodeFrame(frame)
 
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   let header = newProtocolHeaderFrame(PROTOCOL_VERSION[0], PROTOCOL_VERSION[1], PROTOCOL_VERSION[2])
@@ -204,9 +180,7 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
       "publisher_confirms": true
     }
   })
-  var meth = newConnectionStartOkMethod(clientProps, $authMethod, authBytes)
-  var frame = newMethodFrame(0, meth)
-  await conn.sock.encodeFrame(frame)
+  await conn.sendMethod(newConnectionStartOkMethod(clientProps, $authMethod, authBytes))
   let tuneOrClose = await conn.waitMethods(@[CONNECTION_TUNE_METHOD_ID, CONNECTION_CLOSE_METHOD_ID])
   if tuneOrClose.methodId == CONNECTION_CLOSE_METHOD_ID:
     raise newException(RMQConnectionClosed, "Connection closed unexpectedly")
@@ -226,13 +200,40 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
     clientFrameMax = serverFrameMax
   if serverHeatbeat != 0 and serverHeatbeat < clientHeatbeat:
     clientHeatbeat = serverHeatbeat
-  meth = newConnectionTuneOkMethod(clientChannelMax, clientFrameMax, clientHeatbeat)
-  frame = newMethodFrame(0, meth)
-  await conn.sock.encodeFrame(frame)
-  meth = newConnectionOpenMethod(info.vhost, "", true)
-  frame = newMethodFrame(0, meth)
-  await conn.sock.encodeFrame(frame)
-  
+  await conn.sendMethod(newConnectionTuneOkMethod(clientChannelMax, clientFrameMax, clientHeatbeat))
+  await conn.sendMethod(newConnectionOpenMethod(info.vhost, "", true))
+  let openOkOrClose = await conn.waitMethods(@[CONNECTION_OPEN_OK_METHOD_ID, CONNECTION_CLOSE_METHOD_ID])
+  if openOkOrClose.methodId == CONNECTION_CLOSE_METHOD_ID:
+    raise newException(RMQConnectionClosed, "Connection closed unexpectedly")
+  #TODO Start consumer here, set callback on close.
+
+proc enqueueFrame(conn: RabbitMQConn, f: Frame) =
+  conn.frames.add(f)
+
+proc requeueFrame(conn: RabbitMQConn, f: Frame) =
+  conn.frames.prepend(f)
+
+proc waitOrGetFrame*(conn: RabbitMQConn): Future[Frame] {.async.} =
+  if conn.frames.empty():
+    result = await conn.sock.decodeFrame()
+  else:
+    result = conn.frames.popFront().value
+
+proc waitOrGetFrameOnChannel*(conn: RabbitMQConn, channel: uint16): Future[Frame] {.async.} =
+  if conn.frames.empty():
+    while true:
+      result = await conn.sock.decodeFrame()
+      if channel != result.channelNum:
+        conn.enqueueFrame(result)
+      else:
+        break
+  else:
+    for node in conn.frames.nodes:
+      if channel == node.value.channelNum:
+        result = node.value
+        conn.frames.reset(node)
+        break
+
 #[
 
 static inline int amqp_heartbeat_send(amqp_connection_state_t state) {
@@ -246,45 +247,6 @@ static inline int amqp_heartbeat_recv(amqp_connection_state_t state) {
 ]#
 
 #[
-
-  {
-    amqp_connection_tune_ok_t s;
-    s.frame_max = client_frame_max;
-    s.channel_max = client_channel_max;
-    s.heartbeat = client_heartbeat;
-
-    res = amqp_send_method_inner(state, 0, AMQP_CONNECTION_TUNE_OK_METHOD, &s, AMQP_SF_NONE, deadline);
-    if (res < 0) {
-      goto error_res;
-    }
-  }
-
-  amqp_release_buffers(state);
-
-  {
-    amqp_method_number_t replies[] = {AMQP_CONNECTION_OPEN_OK_METHOD, 0};
-    amqp_connection_open_t s;
-    s.virtual_host = amqp_cstring_bytes(vhost);
-    s.capabilities = amqp_empty_bytes;
-    s.insist = 1;
-
-    result = simple_rpc_inner(state, 0, AMQP_CONNECTION_OPEN_METHOD, replies,
-                              &s, deadline);
-    if (result.reply_type != AMQP_RESPONSE_NORMAL) {
-      goto out;
-    }
-  }
-
-  result.reply_type = AMQP_RESPONSE_NORMAL;
-  result.reply.id = 0;
-  result.reply.decoded = NULL;
-  result.library_error = 0;
-  amqp_maybe_release_buffers(state);
-
-out:
-  return result;
-
-
 static amqp_rpc_reply_t simple_rpc_inner(
     amqp_connection_state_t state, amqp_channel_t channel,
     amqp_method_number_t request_id, amqp_method_number_t *expected_reply_ids,
@@ -319,7 +281,18 @@ static amqp_rpc_reply_t simple_rpc_inner(
      *  - on the channel we want, and a channel.close frame, or
      *  - on channel zero, and a connection.close frame.
      */
-    if (!((frame.frame_type == AMQP_FRAME_METHOD) && (((frame.channel == channel) && (amqp_id_in_reply_list(frame.payload.method.id, expected_reply_ids) || (frame.payload.method.id == AMQP_CHANNEL_CLOSE_METHOD))) || ((frame.channel == 0) && (frame.payload.method.id == AMQP_CONNECTION_CLOSE_METHOD))))) {
+    if (
+        !(
+          (frame.frame_type == AMQP_FRAME_METHOD) && 
+          (
+            (
+              (frame.channel == channel) && 
+              (amqp_id_in_reply_list(frame.payload.method.id, expected_reply_ids) || (frame.payload.method.id == AMQP_CHANNEL_CLOSE_METHOD))
+            ) || 
+            ((frame.channel == 0) && (frame.payload.method.id == AMQP_CONNECTION_CLOSE_METHOD))
+          )
+        )
+      ) {
       amqp_pool_t *channel_pool;
       amqp_frame_t *frame_copy;
       amqp_link_t *link;
@@ -351,4 +324,5 @@ static amqp_rpc_reply_t simple_rpc_inner(
     return result;
   }
 }
+
 ]#
