@@ -105,7 +105,7 @@ proc len*(meth: AMQPConnection): int =
   else:
       raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc decode*(s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.} =
+proc decode*(_: typedesc[AMQPConnection], s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.} =
   case t:
   of CONNECTION_START_METHOD_ID:
     result = AMQPConnection(kind: AMQP_CONNECTION_START_SUBMETHOD)
@@ -232,6 +232,18 @@ proc newConnectionOpenOk*(knownHosts: string): AMQPConnection =
     kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD, 
     knownHosts: knownHosts
   )
+
+proc newConnectionClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPConnection =
+  result = AMQPConnection(
+    kind: AMQP_CONNECTION_CLOSE_SUBMETHOD,
+    replyCode: replyCode,
+    replyText: replyText,
+    classId: classId,
+    methodId: methodId
+  )
+
+proc newConnectionCloseOk*(): AMQPConnection =
+  result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
 
 #[
 type

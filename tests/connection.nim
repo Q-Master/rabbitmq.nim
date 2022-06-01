@@ -12,17 +12,14 @@ suite "RabbitMQ connection":
       var rabbit: RabbitMQConn
       try:
         await connection.connect()
-        let rabbit = connection.acquire()
-        #await redis.sendLine(@["PING"])
-        #let replStr = await redis.readLine()
-        #check(replStr == "+PONG")
+        rabbit = await connection.acquire()
       except RMQConnectionFailed:
         echo "Can't connect to Redis instance"
         fail()
       finally:
         if not rabbit.isNil:
           rabbit.release()
-        #await connection.close()
+        await connection.close()
     waitFor(testConnection())
 #[
   test "Simple connect/disconnect using with statement":

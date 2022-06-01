@@ -4,8 +4,9 @@ import ../util/endians
 import ../field
 import ../exceptions
 import ./connection
+import ./channel
 
-export connection
+export connection, channel
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -24,9 +25,17 @@ type
     AMQP_CONNECTION_BLOCKED_METHOD = CONNECTION_BLOCKED_METHOD_ID
     AMQP_CONNECTION_UNBLOCKED_METHOD = CONNECTION_UNBLOCKED_METHOD_ID
 
+    AMQP_CHANNEL_OPEN_METHOD = CHANNEL_OPEN_METHOD_ID
+    AMQP_CHANNEL_OPEN_OK_METHOD = CHANNEL_OPEN_OK_METHOD_ID
+    AMQP_CHANNEL_FLOW_METHOD = CHANNEL_FLOW_METHOD_ID
+    AMQP_CHANNEL_FLOW_OK_METHOD = CHANNEL_FLOW_OK_METHOD_ID
+    AMQP_CHANNEL_CLOSE_METHOD = CHANNEL_CLOSE_METHOD_ID
+    AMQP_CHANNEL_CLOSE_OK_METHOD = CHANNEL_CLOSE_OK_METHOD_ID
+
   AMQPMetodKind* = enum
     NONE = 0
     CONNECTION = CONNECTION_METHODS
+    CHANNEL = CHANNEL_METHODS
 
   AMQPMethod* = ref AMQPMethodObj
   AMQPMethodObj* = object of RootObj
@@ -34,6 +43,8 @@ type
     case kind*: AMQPMetodKind
     of CONNECTION:
       connObj*: AMQPConnection
+    of CHANNEL:
+      channelObj*: AMQPChannel
     else:
       discard
 
@@ -55,7 +66,9 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
   result = meth
   case meth.kind
   of CONNECTION:
-    result.connObj = await src.decode(methodId)
+    result.connObj = await AMQPConnection.decode(src, methodId)
+  of CHANNEL:
+    result.channelObj = await AMQPChannel.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -64,11 +77,15 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
   case meth.kind
   of CONNECTION:
     await meth.connObj.encode(dst)
+  of CHANNEL:
+    await meth.channelObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
 
 #--
+
+#-- Connection
 
 proc newConnectionStartMethod*(major, minor: uint8, serverprops: FieldTable, mechanisms, locales: string): AMQPMethod =
   result = newMethod(CONNECTION_START_METHOD_ID)
@@ -93,3 +110,37 @@ proc newConnectionOpenMethod*(virtualHost: string, caps: string, insist: bool): 
 proc newConnectionOpenOkMethod*(knownHosts: string): AMQPMethod =
   result = newMethod(CONNECTION_OPEN_OK_METHOD_ID)
   result.connObj = newConnectionOpenOk(knownHosts)
+
+proc newConnectionCloseMethod*(replyCode: uint16, replyText: string, classId: uint16 = 0.uint16, methodId: uint16 = 0.uint16): AMQPMethod =
+  result = newMethod(CONNECTION_CLOSE_METHOD_ID)
+  result.connObj = newConnectionClose(replyCode, replyText, classId, methodId)
+
+proc newConnectionCloseOkMethod*(): AMQPMethod =
+  result = newMethod(CONNECTION_CLOSE_OK_METHOD_ID)
+  result.connObj = newConnectionCloseOk()
+
+#-- Channel
+
+proc newChannelOpenMethod*(outOfBand: string): AMQPMethod =
+  result = newMethod(CHANNEL_OPEN_METHOD_ID)
+  result.channelObj = newChannelOpen(outOfBand)
+
+proc newChannelOpenOkMethod*(channelId: string): AMQPMethod =
+  result = newMethod(CHANNEL_OPEN_OK_METHOD_ID)
+  result.channelObj = newChannelOpenOk(channelId)
+
+proc newChannelFlowMethod*(active: bool): AMQPMethod =
+  result = newMethod(CHANNEL_FLOW_METHOD_ID)
+  result.channelObj = newChannelFlow(active)
+
+proc newChannelFlowOkMethod*(active: bool): AMQPMethod =
+  result = newMethod(CHANNEL_FLOW_OK_METHOD_ID)
+  result.channelObj = newChannelFlowOk(active)
+
+proc newChannelCloseMethod*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPMethod =
+  result = newMethod(CHANNEL_CLOSE_METHOD_ID)
+  result.channelObj = newChannelClose(replyCode, replyText, classId, methodId)
+
+proc newChannelCloseMethod*(): AMQPMethod =
+  result = newMethod(CHANNEL_CLOSE_OK_METHOD_ID)
+  result.channelObj = newChannelCloseOk()

@@ -239,11 +239,17 @@ proc decodeArray*(s: AsyncBufferedSocket): Future[seq[Field]] {.async.} =
 
 proc decodeShortString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.read8()
-  result = await s.readString(size)
+  if size == 0:
+    result = ""
+  else:
+    result = await s.readString(size)
 
 proc decodeString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.readBEU32()
-  result = await s.readString(size.int)
+  if size == 0:
+    result = ""
+  else:
+    result = await s.readString(size.int)
 
 proc decodeTable*(s: AsyncBufferedSocket): Future[FieldTable] {.async.} =
   result = newFieldTable()

@@ -14,6 +14,7 @@ type
     RMQConnectionNotImplemented* = object of RMQConnectionException
     RMQConnectionInternalError* = object of RMQConnectionException
     RMQConnectionClosed* = object of RMQConnectionException
+    RMQChannelClosed* = object of RMQConnectionException
 
 type
     # AMQP Errors
