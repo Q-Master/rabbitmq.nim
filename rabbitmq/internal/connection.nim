@@ -110,7 +110,6 @@ proc close*(pool: RabbitMQ) {.async.}=
     for i in 0 ..< pool.pool.len:
       template s: untyped = pool.pool[i]
       if not s.isNil:
-        echo s.inuse
         if s.inuse:
           closed = false
         else:
@@ -183,7 +182,6 @@ proc closeConnection(conn: RabbitMQConn): Future[void] {.async.} =
   let closeOk = await conn.simpleRPC(newConnectionCloseMethod(AMQP_REPLY_CODE, $AMQP_REPLY_CODE, 0, 0), 0, @[CONNECTION_CLOSE_OK_METHOD_ID])
 
 proc disconnect(rabbit: RabbitMQConn): Future[void] {.async.} =
-  echo "DISCONNECTING"
   if rabbit.connected:
     if rabbit.authenticated:
       await rabbit.closeConnection()
