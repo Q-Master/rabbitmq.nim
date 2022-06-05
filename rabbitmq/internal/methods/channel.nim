@@ -62,7 +62,7 @@ proc len*(meth: AMQPChannel): int =
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
     discard
   else:
-      raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc decode*(_: typedesc[AMQPChannel], s: AsyncBufferedSocket, t: uint32): Future[AMQPChannel] {.async.} =
   case t:
@@ -106,7 +106,7 @@ proc encode*(meth: AMQPChannel, dst: AsyncBufferedSocket) {.async.} =
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
     discard
   else:
-      raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc newChannelOpen*(outOfBand: string): AMQPChannel =
   result = AMQPChannel(

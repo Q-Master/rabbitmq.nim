@@ -114,7 +114,7 @@ proc close*(pool: RabbitMQ) {.async.}=
           closed = false
         else:
           await s.disconnect()
-    await sleepAsync(1)
+    await sleepAsync(200)
 
 template withRabbit*(t: RabbitMQ, x: untyped) =
   var rabbit {.inject.} = await t.acquire()

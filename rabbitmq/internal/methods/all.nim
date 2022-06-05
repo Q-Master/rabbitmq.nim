@@ -119,6 +119,14 @@ proc newConnectionCloseOkMethod*(): AMQPMethod =
   result = newMethod(CONNECTION_CLOSE_OK_METHOD_ID)
   result.connObj = newConnectionCloseOk()
 
+proc newConnectionBlockedMethod*(reason: string): AMQPMethod =
+  result = newMethod(CONNECTION_BLOCKED_METHOD_ID)
+  result.connObj = newConnectionBlocked(reason)
+
+proc newConnectionUnblockedMethod*(): AMQPMethod =
+  result = newMethod(CONNECTION_UNBLOCKED_METHOD_ID)
+  result.connObj = newConnectionUnblocked()
+
 #-- Channel
 
 proc newChannelOpenMethod*(outOfBand: string): AMQPMethod =
