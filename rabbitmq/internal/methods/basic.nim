@@ -1,596 +1,584 @@
-import tables
-import ../data
-import ../streams
-import ./submethods
+import std/[asyncdispatch, tables]
+import pkg/networkutils/buffered_socket
+import ../field
+import ../exceptions
 
 const BASIC_METHODS* = 0x003C.uint16
-const BASIC_QOS_METHOD_ID = 0x003C000A.uint32
-const BASIC_QOS_OK_METHOD_ID = 0x003C000B.uint32
-const BASIC_CONSUME_METHOD_ID = 0x003C0014.uint32
-const BASIC_CONSUME_OK_METHOD_ID = 0x003C0015.uint32
-const BASIC_CANCEL_METHOD_ID = 0x003C001E.uint32
-const BASIC_CANCEL_OK_METHOD_ID = 0x003C001F.uint32
-const BASIC_PUBLISH_METHOD_ID = 0x003C0028.uint32
-const BASIC_RETURN_METHOD_ID = 0x003C0032.uint32
-const BASIC_DELIVER_METHOD_ID = 0x003C003C.uint32
-const BASIC_GET_METHOD_ID = 0x003C0046.uint32
-const BASIC_GET_OK_METHOD_ID = 0x003C0047.uint32
-const BASIC_GET_EMPTY_METHOD_ID = 0x003C0048.uint32
-const BASIC_ACK_METHOD_ID = 0x003C0050.uint32
-const BASIC_REJECT_METHOD_ID = 0x003C005A.uint32
-const BASIC_RECOVER_ASYNC_METHOD_ID = 0x003C0064.uint32
-const BASIC_RECOVER_METHOD_ID = 0x003C006E.uint32
-const BASIC_RECOVER_OK_METHOD_ID = 0x003C006F.uint32
-const BASIC_NACK_METHOD_ID = 0x003C0078.uint32
+const BASIC_QOS_METHOD_ID* = 0x003C000A.uint32
+const BASIC_QOS_OK_METHOD_ID* = 0x003C000B.uint32
+const BASIC_CONSUME_METHOD_ID* = 0x003C0014.uint32
+const BASIC_CONSUME_OK_METHOD_ID* = 0x003C0015.uint32
+const BASIC_CANCEL_METHOD_ID* = 0x003C001E.uint32
+const BASIC_CANCEL_OK_METHOD_ID* = 0x003C001F.uint32
+const BASIC_PUBLISH_METHOD_ID* = 0x003C0028.uint32
+const BASIC_RETURN_METHOD_ID* = 0x003C0032.uint32
+const BASIC_DELIVER_METHOD_ID* = 0x003C003C.uint32
+const BASIC_GET_METHOD_ID* = 0x003C0046.uint32
+const BASIC_GET_OK_METHOD_ID* = 0x003C0047.uint32
+const BASIC_GET_EMPTY_METHOD_ID* = 0x003C0048.uint32
+const BASIC_ACK_METHOD_ID* = 0x003C0050.uint32
+const BASIC_REJECT_METHOD_ID* = 0x003C005A.uint32
+const BASIC_RECOVER_ASYNC_METHOD_ID* = 0x003C0064.uint32
+const BASIC_RECOVER_METHOD_ID* = 0x003C006E.uint32
+const BASIC_RECOVER_OK_METHOD_ID* = 0x003C006F.uint32
+const BASIC_NACK_METHOD_ID* = 0x003C0078.uint32
 
 type
-  BasicVariants* = enum
-    NONE = 0
-    BASIC_QOS_METHOD = (BASIC_QOS_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_QOS_OK_METHOD = (BASIC_QOS_OK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_CONSUME_METHOD = (BASIC_CONSUME_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_CONSUME_OK_METHOD = (BASIC_CONSUME_OK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_CANCEL_METHOD = (BASIC_CANCEL_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_CANCEL_OK_METHOD = (BASIC_CANCEL_OK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_PUBLISH_METHOD = (BASIC_PUBLISH_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_RETURN_METHOD = (BASIC_RETURN_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_DELIVER_METHOD = (BASIC_DELIVER_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_GET_METHOD = (BASIC_GET_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_GET_OK_METHOD = (BASIC_GET_OK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_GET_EMPTY_METHOD = (BASIC_GET_EMPTY_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_ACK_METHOD = (BASIC_ACK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_REJECT_METHOD = (BASIC_REJECT_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_RECOVER_ASYNC_METHOD = (BASIC_RECOVER_ASYNC_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_RECOVER_METHOD = (BASIC_RECOVER_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_RECOVER_OK_METHOD = (BASIC_RECOVER_OK_METHOD_ID and 0x0000FFFF).uint16
-    BASIC_NACK_METHOD = (BASIC_NACK_METHOD_ID and 0x0000FFFF).uint16
+  AMQPBasicKind = enum
+    AMQP_BASIC_NONE = 0
+    AMQP_BASIC_QOS_SUBMETHOD = (BASIC_QOS_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_QOS_OK_SUBMETHOD = (BASIC_QOS_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_CONSUME_SUBMETHOD = (BASIC_CONSUME_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_CONSUME_OK_SUBMETHOD = (BASIC_CONSUME_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_CANCEL_SUBMETHOD = (BASIC_CANCEL_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_CANCEL_OK_SUBMETHOD = (BASIC_CANCEL_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_PUBLISH_SUBMETHOD = (BASIC_PUBLISH_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_RETURN_SUBMETHOD = (BASIC_RETURN_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_DELIVER_SUBMETHOD = (BASIC_DELIVER_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_GET_SUBMETHOD = (BASIC_GET_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_GET_OK_SUBMETHOD = (BASIC_GET_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_GET_EMPTY_SUBMETHOD = (BASIC_GET_EMPTY_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_ACK_SUBMETHOD = (BASIC_ACK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_REJECT_SUBMETHOD = (BASIC_REJECT_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD = (BASIC_RECOVER_ASYNC_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_RECOVER_SUBMETHOD = (BASIC_RECOVER_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_RECOVER_OK_SUBMETHOD = (BASIC_RECOVER_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_BASIC_NACK_SUBMETHOD = (BASIC_NACK_METHOD_ID and 0x0000FFFF).uint16
 
+  AMQPBasicQOSBits* = object
+    global* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
 
-type 
-  BasicMethod* = ref object of SubMethod
-    ticket*: uint16
-    exchange*: string
+  AMQPBasicConsumeBits* = object
+    noLocal* {.bitsize: 1.}: bool
+    noAck* {.bitsize: 1.}: bool
+    exclusive* {.bitsize: 1.}: bool
+    noWait* {.bitsize: 1.}: bool
+    unused {.bitsize: 4.}: uint8
+
+  AMQPBasicCancelBits* = object
+    noWait* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPBasicPublishBits* = object
+    mandatory* {.bitsize: 1.}: bool
+    immediate* {.bitsize: 1.}: bool
+    unused {.bitsize: 5.}: uint8
+
+  AMQPBasicRedeliveredBits* = object
+    redelivered* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPBasicGetBits* = object
+    noAck* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPBasicAckBits* = object
+    multiple* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPBasicRequeueBits* = object
+    requeue* {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPBasicNackBits* = object
+    multiple* {.bitsize: 1.}: bool
+    requeue* {.bitsize: 1.}: bool
+    unused {.bitsize: 5.}: uint8
+
+  AMQPBasicQOSObj* = object of RootObj
+    prefetchSize*: uint32
+    prefetchCount*: uint16
+    flags*: AMQPBasicQOSBits
+
+  AMQPBasicConsumerTagObj* = object of RootObj
     consumerTag*: string
-    routingKey*: string
-    noWait*: bool
+  
+  AMQPBasicConsumeObj* = object of AMQPBasicConsumerTagObj
+    ticket*: uint16
     queue*: string
-    noAck*: bool
+    flags*: AMQPBasicConsumeBits
+    args*: FieldTable
+  
+  AMQPBasicCancelObj* = object of AMQPBasicConsumerTagObj
+    flags*: AMQPBasicCancelBits
+  
+  AMQPBasicExchangeRoutingKeyObj* = object of RootObj
+    exchange*: string
+    routingKey*: string
+
+  AMQPBasicPublishObj* = object of AMQPBasicExchangeRoutingKeyObj
+    ticket*: uint16
+    flags*: AMQPBasicPublishBits
+
+  AMQPBasicReturnObj* = object of AMQPBasicExchangeRoutingKeyObj
+    replyCode*: uint16
+    replyText*: string
+  
+  AMQPBasicDeliveryTagObj* = object of RootObj
     deliveryTag*: uint64
-    redelivered*: bool
-    requeue*: bool
-    multiple*: bool
-    case indexLo*: BasicVariants
-    of NONE:
+
+  AMQPBasicDeliveryTagExchangeRoutingKeyObj* = object of AMQPBasicDeliveryTagObj
+    exchange*: string
+    routingKey*: string
+
+  AMQPBasicDeliverObj* = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
+    consumerTag*: string
+    flags*: AMQPBasicRedeliveredBits
+  
+  AMQPBasicGetObj* = object of RootObj
+    ticket*: uint16
+    queue*: string
+    flags*: AMQPBasicGetBits
+
+  AMQPBasicGetOkObj* = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
+    messageCount*: uint32
+    flags*: AMQPBasicRedeliveredBits
+  
+  AMQPBasicGetEmptyObj* = object of RootObj
+    clusterId*: string
+
+  AMQPBasicAckObj* = object of AMQPBasicDeliveryTagObj
+    flags*: AMQPBasicAckBits
+
+  AMQPBasicRejectObj* = object of AMQPBasicDeliveryTagObj
+    flags*: AMQPBasicRequeueBits
+
+  AMQPBasicRecoverObj* = object of RootObj
+    flags*: AMQPBasicRequeueBits
+  
+  AMQPBasicNackObj* = object of AMQPBasicDeliveryTagObj
+    flags*: AMQPBasicNackBits
+  
+  AMQPBasic* = ref AMQPBasicObj
+  AMQPBasicObj* = object of RootObj
+    case kind*: AMQPBasicKind
+    of AMQP_BASIC_QOS_SUBMETHOD:
+      qos*: AMQPBasicQOSObj
+    of AMQP_BASIC_QOS_OK_SUBMETHOD, AMQP_BASIC_RECOVER_OK_SUBMETHOD:
       discard
-    of BASIC_QOS_METHOD:
-      prefetchSize*: uint32
-      prefetchCount*: uint16
-      globalQos*: bool
-    of BASIC_CONSUME_METHOD:
-      noLocal*: bool
-      exclusive*: bool
-      arguments*: FieldTable
-    of BASIC_PUBLISH_METHOD:
-      mandatory*: bool
-      immediate*: bool
-    of BASIC_RETURN_METHOD:
-      replyCode*: uint16
-      replyText*: string
-    of BASIC_GET_OK_METHOD:
-      messageCount*: uint32
-    of BASIC_GET_EMPTY_METHOD:
-      clusterId*: string
-    of BASIC_QOS_OK_METHOD:
-      discard
-    of BASIC_CONSUME_OK_METHOD:
-      discard
-    of BASIC_CANCEL_METHOD:
-      discard
-    of BASIC_CANCEL_OK_METHOD:
-      discard
-    of BASIC_DELIVER_METHOD:
-      discard
-    of BASIC_GET_METHOD:
-      discard
-    of BASIC_ACK_METHOD:
-      discard
-    of BASIC_REJECT_METHOD:
-      discard
-    of BASIC_RECOVER_ASYNC_METHOD:
-      discard
-    of BASIC_RECOVER_METHOD:
-      discard
-    of BASIC_RECOVER_OK_METHOD:
-      discard
-    of BASIC_NACK_METHOD:
+    of AMQP_BASIC_CONSUME_SUBMETHOD:
+      consume*: AMQPBasicConsumeObj
+    of AMQP_BASIC_CONSUME_OK_SUBMETHOD, AMQP_BASIC_CANCEL_OK_SUBMETHOD:
+      consumeCancelOk*: AMQPBasicConsumerTagObj
+    of AMQP_BASIC_CANCEL_SUBMETHOD:
+      cancel*: AMQPBasicCancelObj
+    of AMQP_BASIC_PUBLISH_SUBMETHOD:
+      publish*: AMQPBasicPublishObj
+    of AMQP_BASIC_RETURN_SUBMETHOD:
+      ret*: AMQPBasicReturnObj
+    of AMQP_BASIC_DELIVER_SUBMETHOD:
+      deliver*: AMQPBasicDeliverObj
+    of AMQP_BASIC_GET_SUBMETHOD:
+      get*: AMQPBasicGetObj
+    of AMQP_BASIC_GET_OK_SUBMETHOD:
+      getOk*: AMQPBasicGetOkObj
+    of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
+      getEmpty*: AMQPBasicGetEmptyObj
+    of AMQP_BASIC_ACK_SUBMETHOD:
+      ack*: AMQPBasicAckObj
+    of AMQP_BASIC_REJECT_SUBMETHOD:
+      reject*: AMQPBasicRejectObj
+    of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
+      recover*: AMQPBasicRecoverObj
+    of AMQP_BASIC_NACK_SUBMETHOD:
+      nack*: AMQPBasicNackObj
+    else:
       discard
 
-proc decodeBasicQos(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicQos(to: OutputStream, data: BasicMethod)
-proc decodeBasicQosOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicQosOk(to: OutputStream, data: BasicMethod)
-proc decodeBasicConsume(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicConsume(to: OutputStream, data: BasicMethod)
-proc decodeBasicConsumeOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicConsumeOk(to: OutputStream, data: BasicMethod)
-proc decodeBasicCancel(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicCancel(to: OutputStream, data: BasicMethod)
-proc decodeBasicCancelOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicCancelOk(to: OutputStream, data: BasicMethod)
-proc decodeBasicPublish(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicPublish(to: OutputStream, data: BasicMethod)
-proc decodeBasicReturn(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicReturn(to: OutputStream, data: BasicMethod)
-proc decodeBasicDeliver(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicDeliver(to: OutputStream, data: BasicMethod)
-proc decodeBasicGet(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicGet(to: OutputStream, data: BasicMethod)
-proc decodeBasicGetOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicGetOk(to: OutputStream, data: BasicMethod)
-proc decodeBasicGetEmpty(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicGetEmpty(to: OutputStream, data: BasicMethod)
-proc decodeBasicAck(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicAck(to: OutputStream, data: BasicMethod)
-proc decodeBasicReject(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicReject(to: OutputStream, data: BasicMethod)
-proc decodeBasicRecoverAsync(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicRecoverAsync(to: OutputStream, data: BasicMethod)
-proc decodeBasicRecover(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicRecover(to: OutputStream, data: BasicMethod)
-proc decodeBasicRecoverOk(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicRecoverOk(to: OutputStream, data: BasicMethod)
-proc decodeBasicNack(encoded: InputStream): (bool, seq[uint16], BasicMethod)
-proc encodeBasicNack(to: OutputStream, data: BasicMethod)
-
-proc decode*(_: type[BasicMethod], submethodId: BasicVariants, encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  case submethodId
-  of BASIC_QOS_METHOD:
-    result = decodeBasicQos(encoded)
-  of BASIC_QOS_OK_METHOD:
-    result = decodeBasicQosOk(encoded)
-  of BASIC_CONSUME_METHOD:
-    result = decodeBasicConsume(encoded)
-  of BASIC_CONSUME_OK_METHOD:
-    result = decodeBasicConsumeOk(encoded)
-  of BASIC_CANCEL_METHOD:
-    result = decodeBasicCancel(encoded)
-  of BASIC_CANCEL_OK_METHOD:
-    result = decodeBasicCancelOk(encoded)
-  of BASIC_PUBLISH_METHOD:
-    result = decodeBasicPublish(encoded)
-  of BASIC_RETURN_METHOD:
-    result = decodeBasicReturn(encoded)
-  of BASIC_DELIVER_METHOD:
-    result = decodeBasicDeliver(encoded)
-  of BASIC_GET_METHOD:
-    result = decodeBasicGet(encoded)
-  of BASIC_GET_OK_METHOD:
-    result = decodeBasicGetOk(encoded)
-  of BASIC_GET_EMPTY_METHOD:
-    result = decodeBasicGetEmpty(encoded)
-  of BASIC_ACK_METHOD:
-    result = decodeBasicAck(encoded)
-  of BASIC_REJECT_METHOD:
-    result = decodeBasicReject(encoded)
-  of BASIC_RECOVER_ASYNC_METHOD:
-    result = decodeBasicRecoverAsync(encoded)
-  of BASIC_RECOVER_METHOD:
-    result = decodeBasicRecover(encoded)
-  of BASIC_RECOVER_OK_METHOD:
-    result = decodeBasicRecoverOk(encoded)
-  of BASIC_NACK_METHOD:
-    result = decodeBasicNack(encoded)
+proc len*(meth: AMQPBasic): int =
+  result = 0
+  case meth.kind:
+  of AMQP_BASIC_QOS_SUBMETHOD:
+    result.inc(sizeInt32Uint32+sizeInt16Uint16+sizeInt8Uint8)
+  of AMQP_BASIC_QOS_OK_SUBMETHOD, AMQP_BASIC_RECOVER_OK_SUBMETHOD:
+    result.inc(0)
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.consume.queue.len+sizeInt8Uint8)
+    result.inc(meth.consume.consumerTag.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.consume.args.len)
+  of AMQP_BASIC_CONSUME_OK_SUBMETHOD:
+    result.inc(meth.consume.consumerTag.len+sizeInt8Uint8)
+  of AMQP_BASIC_CANCEL_SUBMETHOD:
+    result.inc(meth.cancel.consumerTag.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_BASIC_CANCEL_OK_SUBMETHOD:
+    result.inc(meth.cancel.consumerTag.len+sizeInt8Uint8)
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.publish.exchange.len+sizeInt8Uint8)
+    result.inc(meth.publish.routingKey.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.ret.replyText.len+sizeInt8Uint8)
+    result.inc(meth.ret.exchange.len+sizeInt8Uint8)
+    result.inc(meth.ret.routingKey.len+sizeInt8Uint8)
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result.inc(meth.deliver.consumerTag.len+sizeInt8Uint8)
+    result.inc(sizeInt64Uint64)
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.deliver.exchange.len+sizeInt8Uint8)
+    result.inc(meth.deliver.routingKey.len+sizeInt8Uint8)
+  of AMQP_BASIC_GET_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.get.queue.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result.inc(sizeInt64Uint64+sizeInt8Uint8)
+    result.inc(meth.getOk.exchange.len+sizeInt8Uint8)
+    result.inc(meth.getOk.routingKey.len+sizeInt8Uint8)
+    result.inc(sizeInt32Uint32)
+  of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
+    result.inc(meth.getEmpty.clusterId.len+sizeInt8Uint8)
+  of AMQP_BASIC_ACK_SUBMETHOD:
+    result.inc(sizeInt64Uint64+sizeInt8Uint8)
+  of AMQP_BASIC_REJECT_SUBMETHOD:
+    result.inc(sizeInt64Uint64+sizeInt8Uint8)
+  of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
+    result.inc(sizeInt8Uint8)
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    result.inc(sizeInt64Uint64+sizeInt8Uint8)
   else:
-    discard
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc encode*(to: OutputStream, data: BasicMethod) =
-  case data.indexLo
-  of BASIC_QOS_METHOD:
-    to.encodeBasicQos(data)
-  of BASIC_QOS_OK_METHOD:
-    to.encodeBasicQosOk(data)
-  of BASIC_CONSUME_METHOD:
-    to.encodeBasicConsume(data)
-  of BASIC_CONSUME_OK_METHOD:
-    to.encodeBasicConsumeOk(data)
-  of BASIC_CANCEL_METHOD:
-    to.encodeBasicCancel(data)
-  of BASIC_CANCEL_OK_METHOD:
-    to.encodeBasicCancelOk(data)
-  of BASIC_PUBLISH_METHOD:
-    to.encodeBasicPublish(data)
-  of BASIC_RETURN_METHOD:
-    to.encodeBasicReturn(data)
-  of BASIC_DELIVER_METHOD:
-    to.encodeBasicDeliver(data)
-  of BASIC_GET_METHOD:
-    to.encodeBasicGet(data)
-  of BASIC_GET_OK_METHOD:
-    to.encodeBasicGetOk(data)
-  of BASIC_GET_EMPTY_METHOD:
-    to.encodeBasicGetEmpty(data)
-  of BASIC_ACK_METHOD:
-    to.encodeBasicAck(data)
-  of BASIC_REJECT_METHOD:
-    to.encodeBasicReject(data)
-  of BASIC_RECOVER_ASYNC_METHOD:
-    to.encodeBasicRecoverAsync(data)
-  of BASIC_RECOVER_METHOD:
-    to.encodeBasicRecover(data)
-  of BASIC_RECOVER_OK_METHOD:
-    to.encodeBasicRecoverOk(data)
-  of BASIC_NACK_METHOD:
-    to.encodeBasicNack(data)
+proc decode*(_: typedesc[AMQPBasic], s: AsyncBufferedSocket, t: uint32): Future[AMQPBasic] {.async.} =
+  case t:
+  of BASIC_QOS_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_QOS_SUBMETHOD, qos: AMQPBasicQOSObj())
+    result.qos.prefetchSize = await s.readBEU32()
+    result.qos.prefetchCount = await s.readBEU16()
+    result.qos.flags = cast[AMQPBasicQOSBits](await s.readU8())
+  of BASIC_QOS_OK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_QOS_OK_SUBMETHOD)
+  of BASIC_CONSUME_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_CONSUME_SUBMETHOD, consume: AMQPBasicConsumeObj())
+    result.consume.ticket = await s.readBEU16()
+    result.consume.queue = await s.decodeShortString()
+    result.consume.consumerTag = await s.decodeShortString()
+    result.consume.flags = cast[AMQPBasicConsumeBits](await s.readU8())
+    result.consume.args = await s.decodeTable()
+  of BASIC_CONSUME_OK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_CONSUME_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
+    result.consumeCancelOk.consumerTag = await s.decodeShortString()
+  of BASIC_CANCEL_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_CANCEL_SUBMETHOD, cancel: AMQPBasicCancelObj())
+    result.cancel.consumerTag = await s.decodeShortString()
+    result.cancel.flags = cast[AMQPBasicCancelBits](await s.readU8())
+  of BASIC_CANCEL_OK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_CANCEL_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
+    result.consumeCancelOk.consumerTag = await s.decodeShortString()
+  of BASIC_PUBLISH_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_PUBLISH_SUBMETHOD, publish: AMQPBasicPublishObj())
+    result.publish.ticket = await s.readBEU16()
+    result.publish.exchange = await s.decodeShortString()
+    result.publish.routingKey = await s.decodeShortString()
+    result.publish.flags = cast[AMQPBasicPublishBits](await s.readU8())
+  of BASIC_RETURN_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_RETURN_SUBMETHOD, ret: AMQPBasicReturnObj())
+    result.ret.replyCode = await s.readBEU16()
+    result.ret.replyText = await s.decodeShortString()
+    result.ret.exchange = await s.decodeShortString()
+    result.ret.routingKey = await s.decodeShortString()
+  of BASIC_DELIVER_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_DELIVER_SUBMETHOD, deliver: AMQPBasicDeliverObj())
+    result.deliver.consumerTag = await s.decodeShortString()
+    result.deliver.deliveryTag = await s.readBEU64()
+    result.deliver.flags = cast[AMQPBasicRedeliveredBits](await s.readU8())
+    result.deliver.exchange = await s.decodeShortString()
+    result.deliver.routingKey = await s.decodeShortString()
+  of BASIC_GET_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_GET_SUBMETHOD, get: AMQPBasicGetObj())
+    result.get.ticket = await s.readBEU16()
+    result.get.queue = await s.decodeShortString()
+    result.get.flags = cast[AMQPBasicGetBits](await s.readU8())
+  of BASIC_GET_OK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_GET_OK_SUBMETHOD, getOk: AMQPBasicGetOkObj())
+    result.getOk.deliveryTag = await s.readBEU64()
+    result.getOk.flags = cast[AMQPBasicRedeliveredBits](await s.readU8())
+    result.getOk.exchange = await s.decodeShortString()
+    result.getOk.routingKey = await s.decodeShortString()
+    result.getOk.messageCount = await s.readBEU32()
+  of BASIC_GET_EMPTY_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_GET_EMPTY_SUBMETHOD, getEmpty: AMQPBasicGetEmptyObj())
+    result.getEmpty.clusterId = await s.decodeShortString()
+  of BASIC_ACK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_ACK_SUBMETHOD, ack: AMQPBasicAckObj())
+    result.ack.deliveryTag = await s.readBEU64()
+    result.ack.flags = cast[AMQPBasicAckBits](await s.readU8())
+  of BASIC_REJECT_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_REJECT_SUBMETHOD, reject: AMQPBasicRejectObj())
+    result.reject.deliveryTag = await s.readBEU64()
+    result.reject.flags = cast[AMQPBasicRequeueBits](await s.readU8())
+  of BASIC_RECOVER_ASYNC_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, recover: AMQPBasicRecoverObj())
+    result.recover.flags = cast[AMQPBasicRequeueBits](await s.readU8())
+  of BASIC_RECOVER_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_SUBMETHOD, recover: AMQPBasicRecoverObj())
+    result.recover.flags = cast[AMQPBasicRequeueBits](await s.readU8())
+  of BASIC_RECOVER_OK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_OK_SUBMETHOD)
+  of BASIC_NACK_METHOD_ID:
+    result = AMQPBasic(kind: AMQP_BASIC_NACK_SUBMETHOD, nack: AMQPBasicNackObj())
+    result.nack.deliveryTag = await s.readBEU64()
+    result.nack.flags = cast[AMQPBasicNackBits](await s.readU8())
   else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+  
+proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
+  echo $meth.kind
+  case meth.kind:
+  of AMQP_BASIC_QOS_SUBMETHOD:
+    await dst.writeBE(meth.qos.prefetchSize)
+    await dst.writeBE(meth.qos.prefetchCount)
+    await dst.write(cast[uint8](meth.qos.flags))
+  of AMQP_BASIC_QOS_OK_SUBMETHOD, AMQP_BASIC_RECOVER_OK_SUBMETHOD:
     discard
-
-#--------------- Basic.Qos ---------------#
-
-proc newBasicQos*(prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_QOS_METHOD)
-  res.prefetchSize = prefetchSize
-  res.prefetchCount = prefetchCount
-  result = (true, @[ord(BASIC_QOS_OK_METHOD).uint16], res)
-
-proc decodeBasicQos(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, prefetchSize) = encoded.readBigEndianU32()
-  let (_, prefetchCount) = encoded.readBigEndianU16()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let globalQos = (bbuf and 0x01) != 0
-  result = newBasicQos(prefetchSize, prefetchCount, globalQos)
-
-proc encodeBasicQos(to: OutputStream, data: BasicMethod) =
-  let bbuf: uint8 = (if data.globalQos: 0x01 else: 0x00)
-  to.writeBigEndian32(data.prefetchSize)
-  to.writeBigEndian16(data.prefetchCount)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.QosOk ---------------#
-
-proc newBasicQosOk*(): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_QOS_OK_METHOD)
-  result = (false, @[], res)
-
-proc decodeBasicQosOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  result = newBasicQosOk()
-
-proc encodeBasicQosOk(to: OutputStream, data: BasicMethod) = discard
-
-#--------------- Basic.Consume ---------------#
-
-proc newBasicConsume*(
-  ticket=0.uint16, 
-  queue="", 
-  consumerTag="", 
-  noLocal=false, 
-  noAck=false, 
-  exclusive=false, 
-  noWait=false, 
-  arguments: FieldTable = nil): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_CONSUME_METHOD)
-  res.ticket = ticket
-  res.queue = queue
-  res.consumerTag = consumerTag
-  res.noLocal = noLocal
-  res.noAck = noAck
-  res.exclusive = exclusive
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(BASIC_CONSUME_OK_METHOD).uint16], res)
-
-proc decodeBasicConsume(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, consumerTag) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let noLocal = (bbuf and 0x01) != 0
-  let noAck = (bbuf and 0x02) != 0
-  let exclusive = (bbuf and 0x04) != 0
-  let noWait =  (bbuf and 0x08) != 0
-  result = newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, arguments)
-
-proc encodeBasicConsume(to: OutputStream, data: BasicMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-  (if data.noLocal: 0x01 else: 0x00) or 
-  (if data.noAck: 0x02 else: 0x00) or 
-  (if data.exclusive: 0x04 else: 0x00) or 
-  (if data.noWait: 0x08 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeShortString(data.consumerTag)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
-
-#--------------- Basic.ConsumeOk ---------------#
-
-proc newBasicConsumeOk*(consumerTag=""): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_CONSUME_OK_METHOD)
-  res.consumerTag = consumerTag
-  result = (false, @[], res)
-
-proc decodeBasicConsumeOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, consumerTag) = encoded.readShortString()
-  result = newBasicConsumeOk(consumerTag)
-
-proc encodeBasicConsumeOk(to: OutputStream, data: BasicMethod) =
-  to.writeShortString(data.consumerTag)
-
-#--------------- Basic.Cancel ---------------#
-
-proc newBasicCancel*(consumerTag="", noWait=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_CANCEL_METHOD)
-  res.consumerTag = consumerTag
-  res.noWait = noWait
-  result = (true, @[ord(BASIC_CANCEL_OK_METHOD).uint16], res)
-
-proc decodeBasicCancel(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, consumerTag) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let noWait = (bbuf and 0x01) != 0
-  result = newBasicCancel(consumerTag, noWait)
-
-proc encodeBasicCancel(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.noWait: 0x01.uint8 else: 0x00.uint8)
-  to.writeShortString(data.consumerTag)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.CancelOk ---------------#
-
-proc newBasicCancelOk*(consumerTag=""): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_CANCEL_OK_METHOD)
-  res.consumerTag = consumerTag
-  result = (false, @[], res)
-
-proc decodeBasicCancelOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, consumerTag) = encoded.readShortString()
-  result = newBasicCancelOk(consumerTag)
-
-proc encodeBasicCancelOk(to: OutputStream, data: BasicMethod) =
-  to.writeShortString(data.consumerTag)
-
-#--------------- Basic.Publish ---------------#
-
-proc newBasicPublish*(ticket=0.uint16, exchange="", routingKey="", mandatory=false, immediate=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_PUBLISH_METHOD)
-  res.ticket = ticket
-  res.exchange = exchange
-  res.routingKey = routingKey
-  res.mandatory = mandatory
-  res.immediate = immediate
-  result = (false, @[], res)
-
-proc decodeBasicPublish(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, exchange) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let mandatory = (bbuf and 0x01) != 0
-  let immediate = (bbuf and 0x02) != 0
-  result = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
-
-proc encodeBasicPublish(to: OutputStream, data: BasicMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-  (if data.mandatory: 0x01 else: 0x00) or 
-  (if data.immediate: 0x02 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.exchange)
-  to.writeShortString(data.routingKey)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.Return ---------------#
-
-proc newBasicReturn*(replyCode=0.uint16, replyText="", exchange="", routingKey=""): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_RETURN_METHOD)
-  res.replyCode = replyCode
-  res.replyText = replyText
-  res.exchange = exchange
-  res.routingKey = routingKey
-  result = (false, @[], res)
-
-proc decodeBasicReturn(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, replyCode) = encoded.readBigEndianU16()
-  let (_, replyText) = encoded.readShortString()
-  let (_, exchange) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  result = newBasicReturn(replyCode, replyText, exchange, routingKey)
-
-proc encodeBasicReturn(to: OutputStream, data: BasicMethod) =
-  to.writeBigEndian16(data.replyCode)
-  to.writeShortString(data.replyText)
-  to.writeShortString(data.exchange)
-  to.writeShortString(data.routingKey)
-
-#--------------- Basic.Deliver ---------------#
-
-proc newBasicDeliver*(consumerTag="", deliveryTag=0.uint64, redelivered=false, exchange="", routingKey=""): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_DELIVER_METHOD)
-  res.consumerTag = consumerTag
-  res.deliveryTag = deliveryTag
-  res.redelivered = redelivered
-  res.exchange = exchange
-  res.routingKey = routingKey
-  result = (false, @[], res)
-
-proc decodeBasicDeliver(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, consumerTag) = encoded.readShortString()
-  let (_, deliveryTag) = encoded.readBigEndianU64()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, exchange) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let redelivered = (bbuf and 0x01) != 0
-  result = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
-
-proc encodeBasicDeliver(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.redelivered: 0x01.uint8 else: 0x00.uint8)
-  to.writeShortString(data.consumerTag)
-  to.writeBigEndian64(data.deliveryTag)
-  to.writeBigEndian8(bbuf)
-  to.writeShortString(data.exchange)
-  to.writeShortString(data.routingKey)
-
-#--------------- Basic.Get ---------------#
-
-proc newBasicGet*(ticket=0.uint16, queue="", noAck=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_GET_METHOD)
-  res.ticket = ticket
-  res.queue = queue
-  res.noAck = noAck
-  result = (true, @[ord(BASIC_GET_OK_METHOD).uint16, ord(BASIC_GET_EMPTY_METHOD).uint16], res)
-
-proc decodeBasicGet(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let noAck = (bbuf and 0x01) != 0
-  result = newBasicGet(ticket, queue, noAck)
-
-proc encodeBasicGet(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.noAck: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.GetOk ---------------#
-
-proc newBasicGetOk*(deliveryTag=0.uint64, redelivered=false, exchange="", routingKey="", messageCount=0.uint32): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_GET_OK_METHOD)
-  res.deliveryTag = deliveryTag
-  res.redelivered = redelivered
-  res.exchange = exchange
-  res.routingKey = routingKey
-  res.messageCount = messageCount
-  result = (false, @[], res)
-
-proc decodeBasicGetOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, deliveryTag) = encoded.readBigEndianU64()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, exchange) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, messageCount) = encoded.readBigEndianU32()
-  let redelivered = (bbuf and 0x01) != 0
-  result = newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
-
-proc encodeBasicGetOk(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.redelivered: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(data.deliveryTag)
-  to.writeBigEndian8(bbuf)
-  to.writeShortString(data.exchange)
-  to.writeShortString(data.routingKey)
-  to.writeBigEndian32(data.messageCount)
-
-#--------------- Basic.GetEmpty ---------------#
-
-proc newBasicGetEmpty*(clusterId=""): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_GET_EMPTY_METHOD)
-  res.clusterId = clusterId
-  result = (false, @[], res)
-
-proc decodeBasicGetEmpty(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, clusterId) = encoded.readShortString()
-  result = newBasicGetEmpty(clusterId)
-
-proc encodeBasicGetEmpty(to: OutputStream, data: BasicMethod) =
-  to.writeShortString(data.clusterId)
-
-#--------------- Basic.Ack ---------------#
-
-proc newBasicAck*(deliveryTag=0.uint64, multiple=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_ACK_METHOD)
-  res.deliveryTag = deliveryTag
-  res.multiple = multiple
-  result = (false, @[], res)
-
-proc decodeBasicAck(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, deliveryTag) = encoded.readBigEndianU64()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let multiple = (bbuf and 0x01) != 0
-  result = newBasicAck(deliveryTag, multiple)
-
-proc encodeBasicAck(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.multiple: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(data.deliveryTag)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.Reject ---------------#
-
-proc newBasicReject*(deliveryTag=0.uint64, requeue=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_REJECT_METHOD)
-  res.deliveryTag = deliveryTag
-  res.requeue = requeue
-  result = (false, @[], res)
-
-proc decodeBasicReject(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, deliveryTag) = encoded.readBigEndianU64()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let requeue = (bbuf and 0x01) != 0
-  result = newBasicReject(deliveryTag, requeue)
-
-proc encodeBasicReject(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(data.deliveryTag)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.RecoverAsync ---------------#
-
-proc newBasicRecoverAsync*(requeue=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_RECOVER_ASYNC_METHOD)
-  res.requeue = requeue
-  result = (false, @[], res)
-
-proc decodeBasicRecoverAsync(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let requeue = (bbuf and 0x01) != 0
-  result = newBasicRecoverAsync(requeue)
-
-proc encodeBasicRecoverAsync(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.Recover ---------------#
-
-proc newBasicRecover*(requeue=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_RECOVER_METHOD)
-  res.requeue = requeue
-  result = (true, @[ord(BASIC_RECOVER_OK_METHOD).uint16], res)
-
-proc decodeBasicRecover(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let requeue = (bbuf and 0x01) != 0
-  result = newBasicRecover(requeue)
-
-proc encodeBasicRecover(to: OutputStream, data: BasicMethod) =
-  let bbuf = (if data.requeue: 0x01.uint8 else: 0x00.uint8)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Basic.RecoverOk ---------------#
-
-proc newBasicRecoverOk*(): (bool, seq[uint16], BasicMethod) =
-  result = (false, @[], BasicMethod(indexLo: BASIC_RECOVER_OK_METHOD))
-
-proc decodeBasicRecoverOk(encoded: InputStream): (bool, seq[uint16], BasicMethod) = newBasicRecoverOk()
-
-proc encodeBasicRecoverOk(to: OutputStream, data: BasicMethod) = discard
-
-#--------------- Basic.Nack ---------------#
-
-proc newBasicNack*(deliveryTag=0.uint64, multiple=false, requeue=false): (bool, seq[uint16], BasicMethod) =
-  var res = BasicMethod(indexLo: BASIC_NACK_METHOD)
-  res.deliveryTag = deliveryTag
-  res.multiple = multiple
-  res.requeue = requeue
-  result = (false, @[], res)
-
-proc decodeBasicNack(encoded: InputStream): (bool, seq[uint16], BasicMethod) =
-  let (_, deliveryTag) = encoded.readBigEndianU64()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let multiple = (bbuf and 0x01) != 0
-  let requeue = (bbuf and 0x02) != 0
-  result = newBasicNack(deliveryTag, multiple, requeue)
-
-proc encodeBasicNack(to: OutputStream, data: BasicMethod) =
-  let bbuf = 0x00.uint8 or
-    (if data.multiple: 0x01.uint8 else: 0x00.uint8) or
-    (if data.requeue: 0x02.uint8 else: 0x00.uint8)
-  to.writeBigEndian64(data.deliveryTag)
-  to.writeBigEndian8(bbuf)
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    await dst.writeBE(meth.consume.ticket)
+    await dst.encodeShortString(meth.consume.queue)
+    await dst.encodeShortString(meth.consume.consumerTag)
+    await dst.write(cast[uint8](meth.consume.flags))
+    await dst.encodeTable(meth.consume.args)
+  of AMQP_BASIC_CONSUME_OK_SUBMETHOD, AMQP_BASIC_CANCEL_OK_SUBMETHOD:
+    await dst.encodeShortString(meth.consumeCancelOk.consumerTag)
+  of AMQP_BASIC_CANCEL_SUBMETHOD:
+    await dst.encodeShortString(meth.cancel.consumerTag)
+    await dst.write(cast[uint8](meth.cancel.flags))
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    await dst.writeBE(meth.publish.ticket)
+    await dst.encodeShortString(meth.publish.exchange)
+    await dst.encodeShortString(meth.publish.routingKey)
+    await dst.write(cast[uint8](meth.publish.flags))
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    await dst.writeBE(meth.ret.replyCode)
+    await dst.encodeShortString(meth.ret.replyText)
+    await dst.encodeShortString(meth.ret.exchange)
+    await dst.encodeShortString(meth.ret.routingKey)
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    await dst.encodeShortString(meth.deliver.consumerTag)
+    await dst.writeBE(meth.deliver.deliveryTag)
+    await dst.write(cast[uint8](meth.deliver.flags))
+    await dst.encodeShortString(meth.deliver.exchange)
+    await dst.encodeShortString(meth.deliver.routingKey)
+  of AMQP_BASIC_GET_SUBMETHOD:
+    await dst.writeBE(meth.get.ticket)
+    await dst.encodeShortString(meth.get.queue)
+    await dst.write(cast[uint8](meth.get.flags))
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    await dst.writeBE(meth.getOk.deliveryTag)
+    await dst.write(cast[uint8](meth.getOk.flags))
+    await dst.encodeShortString(meth.getOk.exchange)
+    await dst.encodeShortString(meth.getOk.routingKey)
+    await dst.writeBE(meth.getOk.messageCount)
+  of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
+    await dst.encodeShortString(meth.getEmpty.clusterId)
+  of AMQP_BASIC_ACK_SUBMETHOD:
+    await dst.writeBE(meth.ack.deliveryTag)
+    await dst.write(cast[uint8](meth.ack.flags))
+  of AMQP_BASIC_REJECT_SUBMETHOD:
+    await dst.writeBE(meth.reject.deliveryTag)
+    await dst.write(cast[uint8](meth.reject.flags))
+  of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
+    await dst.write(cast[uint8](meth.recover.flags))
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    await dst.writeBE(meth.nack.deliveryTag)
+    await dst.write(cast[uint8](meth.nack.flags))
+  else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+
+proc newBasicQos*(prefetchSize: uint32, prefetchCount: uint16, globalQos: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_QOS_SUBMETHOD,
+    qos: AMQPBasicQOSObj(
+      prefetchSize: prefetchSize,
+      prefetchCount: prefetchCount,
+      flags: AMQPBasicQOSBits(
+        global: globalQos
+      )
+    )
+  )
+
+proc newBasicQosOk*(): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_QOS_OK_SUBMETHOD
+  )
+
+proc newBasicConsume*(ticket: uint16, queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_CONSUME_SUBMETHOD,
+    consume: AMQPBasicConsumeObj(
+      ticket: ticket,
+      queue: queue,
+      consumerTag: consumerTag,
+      args: args,
+      flags: AMQPBasicConsumeBits(
+        noLocal: noLocal,
+        noAck: noAck,
+        exclusive: exclusive,
+        noWait: noWait
+      )
+    )
+  )
+
+proc newBasicConsumeOk*(consumerTag: string): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_CONSUME_OK_SUBMETHOD,
+    consumeCancelOk: AMQPBasicConsumerTagObj(
+      consumerTag: consumerTag
+    )
+  )
+
+proc newBasicCancel*(consumerTag: string, noWait: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_CANCEL_SUBMETHOD,
+    cancel: AMQPBasicCancelObj(
+      consumerTag: consumerTag,
+      flags: AMQPBasicCancelBits(
+        noWait: noWait
+      )
+    )
+  )
+
+proc newBasicCancelOk*(consumerTag: string): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_CANCEL_OK_SUBMETHOD,
+    consumeCancelOk: AMQPBasicConsumerTagObj(
+      consumerTag: consumerTag
+    )
+  )
+
+proc newBasicPublish*(ticket: uint16, exchange, routingKey: string, mandatory, immediate: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_PUBLISH_SUBMETHOD,
+    publish: AMQPBasicPublishObj(
+      ticket: ticket,
+      exchange: exchange,
+      routingKey: routingKey,
+      flags: AMQPBasicPublishBits(
+        mandatory: mandatory,
+        immediate: immediate
+      )
+    )
+  )
+
+proc newBasicReturn*(replyCode: uint16, replyText, exchange, routingKey: string): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_RETURN_SUBMETHOD,
+    ret: AMQPBasicReturnObj(
+      replyCode: replyCode,
+      replyText: replyText,
+      exchange: exchange,
+      routingKey: routingKey
+    )
+  )
+
+proc newBasicDeliver*(consumerTag: string, deliveryTag: uint64, redelivered: bool, exchange, routingKey: string): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_DELIVER_SUBMETHOD,
+    deliver: AMQPBasicDeliverObj(
+      consumerTag: consumerTag,
+      deliveryTag: deliveryTag,
+      flags: AMQPBasicRedeliveredBits(
+        redelivered: redelivered
+      ),
+      exchange: exchange,
+      routingKey: routingKey
+    )
+  )
+
+proc newBasicGet*(ticket: uint16, queue: string, noAck: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_GET_SUBMETHOD,
+    get: AMQPBasicGetObj(
+      ticket: ticket,
+      queue: queue,
+      flags: AMQPBasicGetBits(
+        noAck: noAck
+      )
+    )
+  )
+
+proc newBasicGetOk*(deliveryTag: uint64, redelivered: bool, exchange, routingKey: string, messageCount: uint32): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_GET_OK_SUBMETHOD,
+    getOk: AMQPBasicGetOkObj(
+      deliveryTag: deliveryTag,
+      flags: AMQPBasicRedeliveredBits(
+        redelivered: redelivered
+      ),
+      exchange: exchange,
+      routingKey: routingKey,
+      messageCount: messageCount
+    )
+  )
+
+proc newBasicGetEmpty*(clusterId: string): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_GET_EMPTY_SUBMETHOD,
+    getEmpty: AMQPBasicGetEmptyObj(
+      clusterId: clusterId
+    )
+  )
+
+proc newBasicAck*(deliveryTag: uint64, multiple: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_ACK_SUBMETHOD,
+    ack: AMQPBasicAckObj(
+      deliveryTag: deliveryTag,
+      flags: AMQPBasicAckBits(
+        multiple: multiple
+      )
+    )
+  )
+
+proc newBasicReject*(deliveryTag: uint64, requeue: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_REJECT_SUBMETHOD,
+    reject: AMQPBasicRejectObj(
+      deliveryTag: deliveryTag,
+      flags: AMQPBasicRequeueBits(
+        requeue: requeue
+      )
+    )
+  )
+
+proc newBasicRecoverAsync*(requeue: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD,
+    recover: AMQPBasicRecoverObj(
+      flags: AMQPBasicRequeueBits(
+        requeue: requeue
+      )
+    )
+  )
+
+proc newBasicRecover*(requeue: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_RECOVER_SUBMETHOD,
+    recover: AMQPBasicRecoverObj(
+      flags: AMQPBasicRequeueBits(
+        requeue: requeue
+      )
+    )
+  )
+
+proc newBasicRecoverOk*(): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_RECOVER_OK_SUBMETHOD
+  )
+
+proc newBasicNack*(deliveryTag: uint64, multiple, requeue: bool): AMQPBasic =
+  result = AMQPBasic(
+    kind: AMQP_BASIC_NACK_SUBMETHOD,
+    nack: AMQPBasicNackObj(
+      deliveryTag: deliveryTag,
+      flags: AMQPBasicNackBits(
+        multiple: multiple,
+        requeue: requeue
+      )
+    )
+  )

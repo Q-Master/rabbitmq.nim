@@ -97,7 +97,7 @@ proc len*(meth: AMQPConnection): int =
     result.inc(sizeInt16Uint16)
     result.inc(sizeInt16Uint16)
   of AMQP_CONNECTION_CLOSE_OK_SUBMETHOD, AMQP_CONNECTION_UNBLOCKED_SUBMETHOD:
-    discard
+    result.inc(0)
   of AMQP_CONNECTION_OPEN_SUBMETHOD:
     result.inc(meth.virtualHost.len + sizeInt8Uint8)
     result.inc(meth.capabilities.len + sizeInt8Uint8)

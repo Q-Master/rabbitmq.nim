@@ -60,7 +60,7 @@ proc len*(meth: AMQPChannel): int =
     result.inc(sizeInt16Uint16)
     result.inc(sizeInt16Uint16)
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
-    discard
+    result.inc(0)
   else:
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 

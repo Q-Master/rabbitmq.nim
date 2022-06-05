@@ -5,8 +5,9 @@ import ../field
 import ../exceptions
 import ./connection
 import ./channel
+import ./basic
 
-export connection, channel
+export connection, channel, basic
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -36,6 +37,7 @@ type
     NONE = 0
     CONNECTION = CONNECTION_METHODS
     CHANNEL = CHANNEL_METHODS
+    BASIC = BASIC_METHODS
 
   AMQPMethod* = ref AMQPMethodObj
   AMQPMethodObj* = object of RootObj
@@ -45,6 +47,8 @@ type
       connObj*: AMQPConnection
     of CHANNEL:
       channelObj*: AMQPChannel
+    of BASIC:
+      basicObj*: AMQPBasic
     else:
       discard
 
@@ -57,6 +61,10 @@ proc len*(meth: AMQPMethod): int =
   case meth.kind
   of CONNECTION:
     result.inc(meth.connObj.len)
+  of CHANNEL:
+    result.inc(meth.channelObj.len)
+  of BASIC:
+    result.inc(meth.basicObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -69,6 +77,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.connObj = await AMQPConnection.decode(src, methodId)
   of CHANNEL:
     result.channelObj = await AMQPChannel.decode(src, methodId)
+  of BASIC:
+    result.basicObj = await AMQPBasic.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -79,6 +89,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.connObj.encode(dst)
   of CHANNEL:
     await meth.channelObj.encode(dst)
+  of BASIC:
+    await meth.basicObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -152,3 +164,77 @@ proc newChannelCloseMethod*(replyCode: uint16, replyText: string, classId: uint1
 proc newChannelCloseMethod*(): AMQPMethod =
   result = newMethod(CHANNEL_CLOSE_OK_METHOD_ID)
   result.channelObj = newChannelCloseOk()
+
+#-- Basic
+
+proc newBasicQosMethod*(prefetchSize: uint32, prefetchCount: uint16, globalQos: bool): AMQPMethod =
+  result = newMethod(BASIC_QOS_METHOD_ID)
+  result.basicObj = newBasicQos(prefetchSize, prefetchCount, globalQos)
+
+proc newBasicQosOkMethod*(): AMQPMethod =
+  result = newMethod(BASIC_QOS_OK_METHOD_ID)
+  result.basicObj = newBasicQosOk()
+
+proc newBasicConsumeMethod*(ticket: uint16, queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPMethod =
+  result = newMethod(BASIC_CONSUME_METHOD_ID)
+  result.basicObj = newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, args)
+
+proc newBasicConsumeOkMethod*(consumerTag: string): AMQPMethod =
+  result = newMethod(BASIC_CONSUME_OK_METHOD_ID)
+  result.basicObj = newBasicConsumeOk(consumerTag)
+
+proc newBasicCancelMethod*(consumerTag: string, noWait: bool): AMQPMethod =
+  result = newMethod(BASIC_CANCEL_METHOD_ID)
+  result.basicObj = newBasicCancel(consumerTag, noWait)
+
+proc newBasicCancelOkMethod*(consumerTag=""): AMQPMethod =
+  result = newMethod(BASIC_CANCEL_OK_METHOD_ID)
+  result.basicObj = newBasicCancelOk(consumerTag)
+
+proc newBasicPublishMethod*(ticket: uint16, exchange, routingKey: string, mandatory, immediate: bool): AMQPMethod =
+  result = newMethod(BASIC_PUBLISH_METHOD_ID)
+  result.basicObj = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
+
+proc newBasicReturnMethod*(replyCode: uint16, replyText, exchange, routingKey: string): AMQPMethod =
+  result = newMethod(BASIC_RETURN_METHOD_ID)
+  result.basicObj = newBasicReturn(replyCode, replyText, exchange, routingKey)
+
+proc newBasicDeliverMethod*(consumerTag: string, deliveryTag: uint64, redelivered: bool, exchange, routingKey: string): AMQPMethod =
+  result = newMethod(BASIC_DELIVER_METHOD_ID)
+  result.basicObj = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
+
+proc newBasicGetMethod*(ticket: uint16, queue: string, noAck: bool): AMQPMethod =
+  result = newMethod(BASIC_GET_METHOD_ID)
+  result.basicObj = newBasicGet(ticket, queue, noAck)
+
+proc newBasicGetOkMethod*(deliveryTag: uint64, redelivered: bool, exchange, routingKey: string, messageCount: uint32): AMQPMethod =
+  result = newMethod(BASIC_GET_OK_METHOD_ID)
+  result.basicObj = newBasicGetOk(deliveryTag, redelivered, exchange, routingKey, messageCount)
+
+proc newBasicGetEmptyMethod*(clusterId: string): AMQPMethod =
+  result = newMethod(BASIC_GET_EMPTY_METHOD_ID)
+  result.basicObj = newBasicGetEmpty(clusterId)
+
+proc newBasicAckMethod*(deliveryTag: uint64, multiple: bool): AMQPMethod =
+  result = newMethod(BASIC_ACK_METHOD_ID)
+  result.basicObj = newBasicAck(deliveryTag, multiple)
+
+proc newBasicRejectMethod*(deliveryTag: uint64, requeue: bool): AMQPMethod =
+  result = newMethod(BASIC_REJECT_METHOD_ID)
+  result.basicObj = newBasicReject(deliveryTag, requeue)
+
+proc newBasicRecoverAsyncMethod*(requeue: bool): AMQPMethod =
+  result = newMethod(BASIC_RECOVER_ASYNC_METHOD_ID)
+  result.basicObj = newBasicRecoverAsync(requeue)
+
+proc newBasicRecoverMethod*(requeue: bool): AMQPMethod =
+  result = newMethod(BASIC_RECOVER_METHOD_ID)
+  result.basicObj = newBasicRecover(requeue)
+
+proc newBasicRecoverOkMethod*(): AMQPMethod =
+  result = newMethod(BASIC_RECOVER_OK_METHOD_ID)
+  result.basicObj = newBasicRecoverOk()
+
+proc newBasicNackMethod*(deliveryTag: uint64, multiple, requeue: bool): AMQPMethod =
+  result = newMethod(BASIC_NACK_METHOD_ID)
+  result.basicObj = newBasicNack(deliveryTag, multiple, requeue)
