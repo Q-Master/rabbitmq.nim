@@ -45,144 +45,144 @@ type
     AMQP_BASIC_RECOVER_OK_SUBMETHOD = (BASIC_RECOVER_OK_METHOD_ID and 0x0000FFFF).uint16
     AMQP_BASIC_NACK_SUBMETHOD = (BASIC_NACK_METHOD_ID and 0x0000FFFF).uint16
 
-  AMQPBasicQOSBits* = object
-    global* {.bitsize: 1.}: bool
+  AMQPBasicQOSBits = object
+    global {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicConsumeBits* = object
-    noLocal* {.bitsize: 1.}: bool
-    noAck* {.bitsize: 1.}: bool
-    exclusive* {.bitsize: 1.}: bool
-    noWait* {.bitsize: 1.}: bool
+  AMQPBasicConsumeBits = object
+    noLocal {.bitsize: 1.}: bool
+    noAck {.bitsize: 1.}: bool
+    exclusive {.bitsize: 1.}: bool
+    noWait {.bitsize: 1.}: bool
     unused {.bitsize: 4.}: uint8
 
-  AMQPBasicCancelBits* = object
-    noWait* {.bitsize: 1.}: bool
+  AMQPBasicCancelBits = object
+    noWait {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicPublishBits* = object
-    mandatory* {.bitsize: 1.}: bool
-    immediate* {.bitsize: 1.}: bool
+  AMQPBasicPublishBits = object
+    mandatory {.bitsize: 1.}: bool
+    immediate {.bitsize: 1.}: bool
     unused {.bitsize: 5.}: uint8
 
-  AMQPBasicRedeliveredBits* = object
-    redelivered* {.bitsize: 1.}: bool
+  AMQPBasicRedeliveredBits = object
+    redelivered {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicGetBits* = object
-    noAck* {.bitsize: 1.}: bool
+  AMQPBasicGetBits = object
+    noAck {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicAckBits* = object
-    multiple* {.bitsize: 1.}: bool
+  AMQPBasicAckBits = object
+    multiple {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicRequeueBits* = object
-    requeue* {.bitsize: 1.}: bool
+  AMQPBasicRequeueBits = object
+    requeue {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPBasicNackBits* = object
-    multiple* {.bitsize: 1.}: bool
-    requeue* {.bitsize: 1.}: bool
+  AMQPBasicNackBits = object
+    multiple {.bitsize: 1.}: bool
+    requeue {.bitsize: 1.}: bool
     unused {.bitsize: 5.}: uint8
 
-  AMQPBasicQOSObj* = object of RootObj
-    prefetchSize*: uint32
-    prefetchCount*: uint16
-    flags*: AMQPBasicQOSBits
+  AMQPBasicQOSObj = object of RootObj
+    prefetchSize: uint32
+    prefetchCount: uint16
+    flags: AMQPBasicQOSBits
 
-  AMQPBasicConsumerTagObj* = object of RootObj
-    consumerTag*: string
+  AMQPBasicConsumerTagObj = object of RootObj
+    consumerTag: string
   
-  AMQPBasicConsumeObj* = object of AMQPBasicConsumerTagObj
-    ticket*: uint16
-    queue*: string
-    flags*: AMQPBasicConsumeBits
-    args*: FieldTable
+  AMQPBasicConsumeObj = object of AMQPBasicConsumerTagObj
+    ticket: uint16
+    queue: string
+    flags: AMQPBasicConsumeBits
+    args: FieldTable
   
-  AMQPBasicCancelObj* = object of AMQPBasicConsumerTagObj
-    flags*: AMQPBasicCancelBits
+  AMQPBasicCancelObj = object of AMQPBasicConsumerTagObj
+    flags: AMQPBasicCancelBits
   
-  AMQPBasicExchangeRoutingKeyObj* = object of RootObj
-    exchange*: string
-    routingKey*: string
+  AMQPBasicExchangeRoutingKeyObj = object of RootObj
+    exchange: string
+    routingKey: string
 
-  AMQPBasicPublishObj* = object of AMQPBasicExchangeRoutingKeyObj
-    ticket*: uint16
-    flags*: AMQPBasicPublishBits
+  AMQPBasicPublishObj = object of AMQPBasicExchangeRoutingKeyObj
+    ticket: uint16
+    flags: AMQPBasicPublishBits
 
-  AMQPBasicReturnObj* = object of AMQPBasicExchangeRoutingKeyObj
-    replyCode*: uint16
-    replyText*: string
+  AMQPBasicReturnObj = object of AMQPBasicExchangeRoutingKeyObj
+    replyCode: uint16
+    replyText: string
   
-  AMQPBasicDeliveryTagObj* = object of RootObj
-    deliveryTag*: uint64
+  AMQPBasicDeliveryTagObj = object of RootObj
+    deliveryTag: uint64
 
-  AMQPBasicDeliveryTagExchangeRoutingKeyObj* = object of AMQPBasicDeliveryTagObj
-    exchange*: string
-    routingKey*: string
+  AMQPBasicDeliveryTagExchangeRoutingKeyObj = object of AMQPBasicDeliveryTagObj
+    exchange: string
+    routingKey: string
 
-  AMQPBasicDeliverObj* = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
-    consumerTag*: string
-    flags*: AMQPBasicRedeliveredBits
+  AMQPBasicDeliverObj = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
+    consumerTag: string
+    flags: AMQPBasicRedeliveredBits
   
-  AMQPBasicGetObj* = object of RootObj
-    ticket*: uint16
-    queue*: string
-    flags*: AMQPBasicGetBits
+  AMQPBasicGetObj = object of RootObj
+    ticket: uint16
+    queue: string
+    flags: AMQPBasicGetBits
 
-  AMQPBasicGetOkObj* = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
-    messageCount*: uint32
-    flags*: AMQPBasicRedeliveredBits
+  AMQPBasicGetOkObj = object of AMQPBasicDeliveryTagExchangeRoutingKeyObj
+    messageCount: uint32
+    flags: AMQPBasicRedeliveredBits
   
-  AMQPBasicGetEmptyObj* = object of RootObj
-    clusterId*: string
+  AMQPBasicGetEmptyObj = object of RootObj
+    clusterId: string
 
-  AMQPBasicAckObj* = object of AMQPBasicDeliveryTagObj
-    flags*: AMQPBasicAckBits
+  AMQPBasicAckObj = object of AMQPBasicDeliveryTagObj
+    flags: AMQPBasicAckBits
 
-  AMQPBasicRejectObj* = object of AMQPBasicDeliveryTagObj
-    flags*: AMQPBasicRequeueBits
+  AMQPBasicRejectObj = object of AMQPBasicDeliveryTagObj
+    flags: AMQPBasicRequeueBits
 
-  AMQPBasicRecoverObj* = object of RootObj
-    flags*: AMQPBasicRequeueBits
+  AMQPBasicRecoverObj = object of RootObj
+    flags: AMQPBasicRequeueBits
   
-  AMQPBasicNackObj* = object of AMQPBasicDeliveryTagObj
-    flags*: AMQPBasicNackBits
+  AMQPBasicNackObj = object of AMQPBasicDeliveryTagObj
+    flags: AMQPBasicNackBits
   
   AMQPBasic* = ref AMQPBasicObj
   AMQPBasicObj* = object of RootObj
     case kind*: AMQPBasicKind
     of AMQP_BASIC_QOS_SUBMETHOD:
-      qos*: AMQPBasicQOSObj
+      qos: AMQPBasicQOSObj
     of AMQP_BASIC_QOS_OK_SUBMETHOD, AMQP_BASIC_RECOVER_OK_SUBMETHOD:
       discard
     of AMQP_BASIC_CONSUME_SUBMETHOD:
-      consume*: AMQPBasicConsumeObj
+      consume: AMQPBasicConsumeObj
     of AMQP_BASIC_CONSUME_OK_SUBMETHOD, AMQP_BASIC_CANCEL_OK_SUBMETHOD:
-      consumeCancelOk*: AMQPBasicConsumerTagObj
+      consumeCancelOk: AMQPBasicConsumerTagObj
     of AMQP_BASIC_CANCEL_SUBMETHOD:
-      cancel*: AMQPBasicCancelObj
+      cancel: AMQPBasicCancelObj
     of AMQP_BASIC_PUBLISH_SUBMETHOD:
-      publish*: AMQPBasicPublishObj
+      publish: AMQPBasicPublishObj
     of AMQP_BASIC_RETURN_SUBMETHOD:
-      ret*: AMQPBasicReturnObj
+      ret: AMQPBasicReturnObj
     of AMQP_BASIC_DELIVER_SUBMETHOD:
-      deliver*: AMQPBasicDeliverObj
+      deliver: AMQPBasicDeliverObj
     of AMQP_BASIC_GET_SUBMETHOD:
-      get*: AMQPBasicGetObj
+      get: AMQPBasicGetObj
     of AMQP_BASIC_GET_OK_SUBMETHOD:
-      getOk*: AMQPBasicGetOkObj
+      getOk: AMQPBasicGetOkObj
     of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
-      getEmpty*: AMQPBasicGetEmptyObj
+      getEmpty: AMQPBasicGetEmptyObj
     of AMQP_BASIC_ACK_SUBMETHOD:
-      ack*: AMQPBasicAckObj
+      ack: AMQPBasicAckObj
     of AMQP_BASIC_REJECT_SUBMETHOD:
-      reject*: AMQPBasicRejectObj
+      reject: AMQPBasicRejectObj
     of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
-      recover*: AMQPBasicRecoverObj
+      recover: AMQPBasicRecoverObj
     of AMQP_BASIC_NACK_SUBMETHOD:
-      nack*: AMQPBasicNackObj
+      nack: AMQPBasicNackObj
     else:
       discard
 
@@ -582,3 +582,280 @@ proc newBasicNack*(deliveryTag: uint64, multiple, requeue: bool): AMQPBasic =
       )
     )
   )
+
+proc consumerTag*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.consumerTag
+  of AMQP_BASIC_CONSUME_OK_SUBMETHOD, AMQP_BASIC_CANCEL_OK_SUBMETHOD:
+    result = self.consumeCancelOk.consumerTag
+  of AMQP_BASIC_CANCEL_SUBMETHOD:
+    result = self.cancel.consumerTag
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result = self.deliver.consumerTag
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc ticket*(self: AMQPBasic): uint16 =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.ticket
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result = self.publish.ticket
+  of AMQP_BASIC_GET_SUBMETHOD:
+    result = self.get.ticket
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc queue*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.queue
+  of AMQP_BASIC_GET_SUBMETHOD:
+    result = self.get.queue
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc args*(self: AMQPBasic): FieldTable =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.args
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc exchange*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result = self.publish.exchange
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    result = self.ret.exchange
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result = self.deliver.exchange
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result = self.getOk.exchange
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc routingKey*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result = self.publish.routingKey
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    result = self.ret.routingKey
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result = self.deliver.routingKey
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result = self.getOk.routingKey
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc replyCode*(self: AMQPBasic): uint16 =
+  case self.kind
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    result = self.ret.replyCode
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc replyText*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_RETURN_SUBMETHOD:
+    result = self.ret.replyText
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc deliveryTag*(self: AMQPBasic): uint64 =
+  case self.kind
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result = self.deliver.deliveryTag
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result = self.getOk.deliveryTag
+  of AMQP_BASIC_ACK_SUBMETHOD:
+    result = self.ack.deliveryTag
+  of AMQP_BASIC_REJECT_SUBMETHOD:
+    result = self.reject.deliveryTag
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    result = self.nack.deliveryTag
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc messageCount*(self: AMQPBasic): uint32 =
+  case self.kind
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result = self.getOk.messageCount
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc clusterId*(self: AMQPBasic): string =
+  case self.kind
+  of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
+    result = self.getEmpty.clusterId
+  else:
+    raise newException(FieldDefect, "No such field")
+
+#[
+    requeue* {.bitsize: 1.}: bool
+]#
+
+proc global*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_QOS_SUBMETHOD:
+    result = self.qos.flags.global
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `global=`*(self: AMQPBasic, global: bool): bool =
+  case self.kind
+  of AMQP_BASIC_QOS_SUBMETHOD:
+    self.qos.flags.global = global
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc noLocal*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.flags.noLocal
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `noLocal=`*(self: AMQPBasic, noLocal: bool): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    self.consume.flags.noLocal = noLocal
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc noAck*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.flags.noAck
+  of AMQP_BASIC_GET_SUBMETHOD:
+    result = self.get.flags.noAck
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `noAck=`*(self: AMQPBasic, noAck: bool): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    self.consume.flags.noAck = noAck
+  of AMQP_BASIC_GET_SUBMETHOD:
+    self.get.flags.noAck = noAck
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc exclusive*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.flags.exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `exclusive=`*(self: AMQPBasic, exclusive: bool): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    self.consume.flags.exclusive = exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc noWait*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    result = self.consume.flags.noWait
+  of AMQP_BASIC_CANCEL_SUBMETHOD:
+    result = self.cancel.flags.noWait
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `noWait=`*(self: AMQPBasic, noWait: bool): bool =
+  case self.kind
+  of AMQP_BASIC_CONSUME_SUBMETHOD:
+    self.consume.flags.noWait = noWait
+  of AMQP_BASIC_CANCEL_SUBMETHOD:
+    self.cancel.flags.noWait = noWait
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc mandatory*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result = self.publish.flags.mandatory
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `mandatory=`*(self: AMQPBasic, mandatory: bool): bool =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    self.publish.flags.mandatory = mandatory
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc immediate*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    result = self.publish.flags.immediate
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `immediate=`*(self: AMQPBasic, immediate: bool): bool =
+  case self.kind
+  of AMQP_BASIC_PUBLISH_SUBMETHOD:
+    self.publish.flags.immediate = immediate
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc redelivered*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    result = self.deliver.flags.redelivered
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    result = self.getOk.flags.redelivered
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `redelivered=`*(self: AMQPBasic, redelivered: bool): bool =
+  case self.kind
+  of AMQP_BASIC_DELIVER_SUBMETHOD:
+    self.deliver.flags.redelivered = redelivered
+  of AMQP_BASIC_GET_OK_SUBMETHOD:
+    self.getOk.flags.redelivered = redelivered
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc multiple*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_ACK_SUBMETHOD:
+    result = self.ack.flags.multiple
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    result = self.nack.flags.multiple
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `multiple=`*(self: AMQPBasic, multiple: bool): bool =
+  case self.kind
+  of AMQP_BASIC_ACK_SUBMETHOD:
+    self.ack.flags.multiple = multiple
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    self.nack.flags.multiple = multiple
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc requeue*(self: AMQPBasic): bool =
+  case self.kind
+  of AMQP_BASIC_REJECT_SUBMETHOD:
+    result = self.reject.flags.requeue
+  of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
+    result = self.recover.flags.requeue
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    result = self.nack.flags.requeue
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `requeue=`*(self: AMQPBasic, requeue: bool): bool =
+  case self.kind
+  of AMQP_BASIC_REJECT_SUBMETHOD:
+    self.reject.flags.requeue = requeue
+  of AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, AMQP_BASIC_RECOVER_SUBMETHOD:
+    self.recover.flags.requeue = requeue
+  of AMQP_BASIC_NACK_SUBMETHOD:
+    self.nack.flags.requeue = requeue
+  else:
+    raise newException(FieldDefect, "No such field")
