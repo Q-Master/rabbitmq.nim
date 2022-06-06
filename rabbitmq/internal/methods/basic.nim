@@ -692,10 +692,6 @@ proc clusterId*(self: AMQPBasic): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-#[
-    requeue* {.bitsize: 1.}: bool
-]#
-
 proc global*(self: AMQPBasic): bool =
   case self.kind
   of AMQP_BASIC_QOS_SUBMETHOD:

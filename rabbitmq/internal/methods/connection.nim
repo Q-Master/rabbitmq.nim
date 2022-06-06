@@ -234,9 +234,11 @@ proc newConnectionOpen*(virtualHost: string, caps: string, insist: bool): AMQPCo
   result = AMQPConnection(
     kind: AMQP_CONNECTION_OPEN_SUBMETHOD, 
     virtualHost: virtualHost, 
-    capabilities: caps
+    capabilities: caps,
+    openFlags: AMQPConnectionOpenBits(
+      insist: insist
+    )
   )
-  result.openFlags.insist = insist
 
 proc newConnectionOpenOk*(knownHosts: string): AMQPConnection =
   result = AMQPConnection(

@@ -122,15 +122,19 @@ proc newChannelOpenOk*(channelId: string): AMQPChannel =
 
 proc newChannelFlow*(active: bool): AMQPChannel =
   result = AMQPChannel(
-    kind: AMQP_CHANNEL_FLOW_SUBMETHOD
+    kind: AMQP_CHANNEL_FLOW_SUBMETHOD,
+    flowFlags: AMQPChannelFlowBits(
+      active: active
+    )
   )
-  result.flowFlags.active = active
 
 proc newChannelFlowOk*(active: bool): AMQPChannel =
   result = AMQPChannel(
-    kind: AMQP_CHANNEL_FLOW_OK_SUBMETHOD
+    kind: AMQP_CHANNEL_FLOW_OK_SUBMETHOD,
+    flowFlags: AMQPChannelFlowBits(
+      active: active
+    )
   )
-  result.flowFlags.active = active
 
 proc newChannelClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPChannel =
   result = AMQPChannel(
