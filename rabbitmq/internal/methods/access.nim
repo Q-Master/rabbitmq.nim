@@ -1,97 +1,86 @@
-#import ./mthd
-import ./submethods
-import ../data
-import ../streams
+import std/[asyncdispatch, tables]
+import pkg/networkutils/buffered_socket
+import ../field
+import ../exceptions
 
 const ACCESS_METHODS* = 0x001E.uint16
-const ACCESS_REQUEST_METHOD_ID = 0x001E000A.uint32
-const ACCESS_REQUEST_OK_METHOD_ID = 0x001E000B.uint32
-
-type AccessVariants* = enum
-  NONE = 0x0000.uint16
-  ACCESS_REQUEST_METHOD = (ACCESS_REQUEST_METHOD_ID and 0x0000ffff).uint16
-  ACCESS_REQUEST_OK_METHOD = (ACCESS_REQUEST_OK_METHOD_ID and 0x0000ffff).uint16
+const ACCESS_REQUEST_METHOD_ID* = 0x001E000A.uint32
+const ACCESS_REQUEST_OK_METHOD_ID* = 0x001E000B.uint32
 
 type
-  AccessMethod* = ref object of SubMethod
-    case indexLo*: AccessVariants
-    of ACCESS_REQUEST_METHOD:
+  AMQPAccessKind = enum
+    AMQP_ACCESS_NONE = 0
+    AMQP_ACCESS_REQUEST_SUBMETHOD = (ACCESS_REQUEST_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_ACCESS_REQUEST_OK_SUBMETHOD = (ACCESS_REQUEST_OK_METHOD_ID and 0x0000FFFF).uint16
+  
+  AMQPAccessRequestBits* = object
+    exclusive* {.bitsize: 1.}: bool
+    passive* {.bitsize: 1.}: bool
+    active* {.bitsize: 1.}: bool
+    write* {.bitsize: 1.}: bool
+    read* {.bitsize: 1.}: bool
+    unused {.bitsize: 2.}: uint8
+
+  AMQPAccess* = ref AMQPAccessObj
+  AMQPAccessObj* = object of RootObj
+    case kind*: AMQPAccessKind
+    of AMQP_ACCESS_REQUEST_SUBMETHOD:
       realm*: string
-      exclusive*: bool
-      passive*: bool
-      active*: bool
-      write*: bool
-      read*: bool
-    of ACCESS_REQUEST_OK_METHOD:
+      requestFlags*: AMQPAccessRequestBits
+    of AMQP_ACCESS_REQUEST_OK_SUBMETHOD:
       ticket*: uint16
     else:
       discard
 
-proc decodeAccessRequest(encoded: InputStream): (bool, seq[uint16], AccessMethod)
-proc encodeAccessRequest(to: OutputStream, data: AccessMethod)
-proc decodeAccessRequestOk(encoded: InputStream): (bool, seq[uint16], AccessMethod)
-proc encodeAccessRequestOk(to: OutputStream, data: AccessMethod)
-
-proc decode*(_: type[AccessMethod], submethodId: AccessVariants, encoded: InputStream): (bool, seq[uint16], AccessMethod) =
-  case submethodId
-  of ACCESS_REQUEST_METHOD:
-    result = decodeAccessRequest(encoded)
-  of ACCESS_REQUEST_OK_METHOD:
-    result = decodeAccessRequestOk(encoded)
+proc len*(meth: AMQPAccess): int =
+  result = 0
+  case meth.kind:
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result.inc(meth.realm.len + sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_ACCESS_REQUEST_OK_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
   else:
-    discard
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc encode*(to: OutputStream, data: AccessMethod) =
-  case data.indexLo
-  of ACCESS_REQUEST_METHOD:
-    to.encodeAccessRequest(data)
-  of ACCESS_REQUEST_OK_METHOD:
-    to.encodeAccessRequestOk(data)
+proc decode*(_: typedesc[AMQPAccess], s: AsyncBufferedSocket, t: uint32): Future[AMQPAccess] {.async.} =
+  case t:
+  of ACCESS_REQUEST_METHOD_ID:
+    result = AMQPAccess(kind: AMQP_ACCESS_REQUEST_SUBMETHOD)
+    result.realm = await s.decodeShortString()
+    result.requestFlags = cast[AMQPAccessRequestBits](await s.readU8())
+  of ACCESS_REQUEST_OK_METHOD_ID:
+    result = AMQPAccess(kind: AMQP_ACCESS_REQUEST_OK_SUBMETHOD)
+    result.ticket = await s.readBEU16()
   else:
-    discard
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-#--------------- Access.Request ---------------#
+proc encode*(meth: AMQPAccess, dst: AsyncBufferedSocket) {.async.} =
+  echo $meth.kind
+  case meth.kind:
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    await dst.encodeShortString(meth.realm)
+    await dst.write(cast[uint8](meth.requestFlags))
+  of AMQP_ACCESS_REQUEST_OK_SUBMETHOD:
+    await dst.writeBE(meth.ticket)
+  else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc newAccessRequest*(realm="/data", exclusive=false, passive=true, active=true, write=true, read=true): (bool, seq[uint16], AccessMethod) =
-  var res = AccessMethod(indexLo: ACCESS_REQUEST_METHOD)
-  res.realm = realm
-  res.exclusive = exclusive
-  res.passive = passive
-  res.active = active
-  res.write = write
-  res.read = read
-  result = (true, @[ord(ACCESS_REQUEST_METHOD).uint16], res)
+proc newAccessRequest*(realm: string, exclusive, passive, active, write, read: bool): AMQPAccess =
+  result = AMQPAccess(
+    kind: AMQP_ACCESS_REQUEST_SUBMETHOD, 
+    realm: realm,
+    requestFlags: AMQPAccessRequestBits(
+      exclusive: exclusive,
+      passive: passive,
+      active: active,
+      write: write,
+      read: read
+    )
+  )
 
-proc decodeAccessRequest(encoded: InputStream): (bool, seq[uint16], AccessMethod) =
-  let (_, realm) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let exclusive = (bbuf and 0x01) != 0
-  let passive = (bbuf and 0x02) != 0
-  let active = (bbuf and 0x04) != 0
-  let write = (bbuf and 0x08) != 0
-  let read = (bbuf and 0x10) != 0
-  result = newAccessRequest(realm, exclusive, passive, active, write, read)
-
-proc encodeAccessRequest(to: OutputStream, data: AccessMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-    (if data.exclusive: 0x01 else: 0x00) or 
-    (if data.passive: 0x02 else: 0x00) or 
-    (if data.active: 0x04 else: 0x00) or 
-    (if data.write: 0x08 else: 0x00) or 
-    (if data.read: 0x10 else: 0x00)
-  to.writeShortString(data.realm)
-  to.writeBigEndian8(bbuf)
-
-#--------------- Access.RequestOk ---------------#
-
-proc newAccessRequestOk*(ticket = 1.uint16): (bool, seq[uint16], AccessMethod) =
-  let res = AccessMethod(indexLo: ACCESS_REQUEST_OK_METHOD)
-  res.ticket = ticket
-  result = (false, @[], res)
-
-proc decodeAccessRequestOk(encoded: InputStream): (bool, seq[uint16], AccessMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  result = newAccessRequestOk(ticket)
-
-proc encodeAccessRequestOk(to: OutputStream, data: AccessMethod) =
-  to.writeBigEndian16(data.ticket)
+proc newAccessRequestOk*(ticket: uint16): AMQPAccess =
+  result = AMQPAccess(
+    kind: AMQP_ACCESS_REQUEST_OK_SUBMETHOD, 
+    ticket: ticket
+  )

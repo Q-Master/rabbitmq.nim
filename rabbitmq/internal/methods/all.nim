@@ -6,8 +6,9 @@ import ../exceptions
 import ./connection
 import ./channel
 import ./basic
+import ./access
 
-export connection, channel, basic
+export connection, channel, basic, access
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -33,10 +34,14 @@ type
     AMQP_CHANNEL_CLOSE_METHOD = CHANNEL_CLOSE_METHOD_ID
     AMQP_CHANNEL_CLOSE_OK_METHOD = CHANNEL_CLOSE_OK_METHOD_ID
 
+    AMQP_ACCESS_REQUEST_METHOD = ACCESS_REQUEST_METHOD_ID
+    AMQP_ACCESS_REQUEST_OK_METHOD = ACCESS_REQUEST_OK_METHOD_ID
+
   AMQPMetodKind* = enum
     NONE = 0
     CONNECTION = CONNECTION_METHODS
     CHANNEL = CHANNEL_METHODS
+    ACCESS = ACCESS_METHODS
     BASIC = BASIC_METHODS
 
   AMQPMethod* = ref AMQPMethodObj
@@ -49,6 +54,8 @@ type
       channelObj*: AMQPChannel
     of BASIC:
       basicObj*: AMQPBasic
+    of ACCESS:
+      accessObj*: AMQPAccess
     else:
       discard
 
@@ -65,6 +72,8 @@ proc len*(meth: AMQPMethod): int =
     result.inc(meth.channelObj.len)
   of BASIC:
     result.inc(meth.basicObj.len)
+  of ACCESS:
+    result.inc(meth.accessObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -79,6 +88,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.channelObj = await AMQPChannel.decode(src, methodId)
   of BASIC:
     result.basicObj = await AMQPBasic.decode(src, methodId)
+  of ACCESS:
+    result.accessObj = await AMQPAccess.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -91,6 +102,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.channelObj.encode(dst)
   of BASIC:
     await meth.basicObj.encode(dst)
+  of ACCESS:
+    await meth.accessObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -238,3 +251,13 @@ proc newBasicRecoverOkMethod*(): AMQPMethod =
 proc newBasicNackMethod*(deliveryTag: uint64, multiple, requeue: bool): AMQPMethod =
   result = newMethod(BASIC_NACK_METHOD_ID)
   result.basicObj = newBasicNack(deliveryTag, multiple, requeue)
+
+#-- Basic
+
+proc newAccessRequestMethod*(realm: string, exclusive, passive, active, write, read: bool): AMQPMethod =
+  result = newMethod(ACCESS_REQUEST_METHOD_ID)
+  result.accessObj = newAccessRequest(realm, exclusive, passive, active, write, read)
+
+proc newAccessRequestOkMethod*(ticket: uint16): AMQPMethod =
+  result = newMethod(ACCESS_REQUEST_OK_METHOD_ID)
+  result.accessObj = newAccessRequestOk(ticket)
