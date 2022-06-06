@@ -1,4 +1,4 @@
-import std/[asyncdispatch, tables]
+import std/[asyncdispatch]
 import pkg/networkutils/buffered_socket
 import ../util/endians
 import ../field
@@ -7,8 +7,9 @@ import ./connection
 import ./channel
 import ./basic
 import ./access
+import ./confirm
 
-export connection, channel, basic, access
+export connection, channel, basic, access, confirm
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -37,12 +38,16 @@ type
     AMQP_ACCESS_REQUEST_METHOD = ACCESS_REQUEST_METHOD_ID
     AMQP_ACCESS_REQUEST_OK_METHOD = ACCESS_REQUEST_OK_METHOD_ID
 
+    AMQP_CONFIRM_SELECT_METHOD = CONFIRM_SELECT_METHOD_ID
+    AMQP_CONFIRM_SELECT_OK_METHOD = CONFIRM_SELECT_OK_METHOD_ID
+
   AMQPMetodKind* = enum
     NONE = 0
     CONNECTION = CONNECTION_METHODS
     CHANNEL = CHANNEL_METHODS
     ACCESS = ACCESS_METHODS
     BASIC = BASIC_METHODS
+    CONFIRM = CONFIRM_METHODS
 
   AMQPMethod* = ref AMQPMethodObj
   AMQPMethodObj* = object of RootObj
@@ -56,6 +61,8 @@ type
       basicObj*: AMQPBasic
     of ACCESS:
       accessObj*: AMQPAccess
+    of CONFIRM:
+      confirmObj*: AMQPConfirm
     else:
       discard
 
@@ -74,6 +81,8 @@ proc len*(meth: AMQPMethod): int =
     result.inc(meth.basicObj.len)
   of ACCESS:
     result.inc(meth.accessObj.len)
+  of CONFIRM:
+    result.inc(meth.confirmObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -90,6 +99,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.basicObj = await AMQPBasic.decode(src, methodId)
   of ACCESS:
     result.accessObj = await AMQPAccess.decode(src, methodId)
+  of CONFIRM:
+    result.confirmObj = await AMQPConfirm.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -104,6 +115,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.basicObj.encode(dst)
   of ACCESS:
     await meth.accessObj.encode(dst)
+  of CONFIRM:
+    await meth.confirmObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -261,3 +274,13 @@ proc newAccessRequestMethod*(realm: string, exclusive, passive, active, write, r
 proc newAccessRequestOkMethod*(ticket: uint16): AMQPMethod =
   result = newMethod(ACCESS_REQUEST_OK_METHOD_ID)
   result.accessObj = newAccessRequestOk(ticket)
+
+#-- Confirm
+
+proc newConfirmSelectMethod*(noWait: bool): AMQPMethod =
+  result = newMethod(CONFIRM_SELECT_METHOD_ID)
+  result.confirmObj = newConfirmSelect(noWait)
+
+proc neConfirmSelectOkMethod*(): AMQPMethod =
+  result = newMethod(CONFIRM_SELECT_OK_METHOD_ID)
+  result.confirmObj = newConfirmSelectOk()
