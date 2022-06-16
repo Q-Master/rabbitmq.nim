@@ -699,7 +699,7 @@ proc global*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `global=`*(self: AMQPBasic, global: bool): bool =
+proc `global=`*(self: AMQPBasic, global: bool) =
   case self.kind
   of AMQP_BASIC_QOS_SUBMETHOD:
     self.qos.flags.global = global
@@ -713,7 +713,7 @@ proc noLocal*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noLocal=`*(self: AMQPBasic, noLocal: bool): bool =
+proc `noLocal=`*(self: AMQPBasic, noLocal: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noLocal = noLocal
@@ -729,7 +729,7 @@ proc noAck*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noAck=`*(self: AMQPBasic, noAck: bool): bool =
+proc `noAck=`*(self: AMQPBasic, noAck: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noAck = noAck
@@ -745,7 +745,7 @@ proc exclusive*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `exclusive=`*(self: AMQPBasic, exclusive: bool): bool =
+proc `exclusive=`*(self: AMQPBasic, exclusive: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.exclusive = exclusive
@@ -761,7 +761,7 @@ proc noWait*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noWait=`*(self: AMQPBasic, noWait: bool): bool =
+proc `noWait=`*(self: AMQPBasic, noWait: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noWait = noWait
@@ -777,7 +777,7 @@ proc mandatory*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `mandatory=`*(self: AMQPBasic, mandatory: bool): bool =
+proc `mandatory=`*(self: AMQPBasic, mandatory: bool) =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     self.publish.flags.mandatory = mandatory
@@ -791,7 +791,7 @@ proc immediate*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `immediate=`*(self: AMQPBasic, immediate: bool): bool =
+proc `immediate=`*(self: AMQPBasic, immediate: bool) =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     self.publish.flags.immediate = immediate
@@ -807,7 +807,7 @@ proc redelivered*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `redelivered=`*(self: AMQPBasic, redelivered: bool): bool =
+proc `redelivered=`*(self: AMQPBasic, redelivered: bool) =
   case self.kind
   of AMQP_BASIC_DELIVER_SUBMETHOD:
     self.deliver.flags.redelivered = redelivered
@@ -825,7 +825,7 @@ proc multiple*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `multiple=`*(self: AMQPBasic, multiple: bool): bool =
+proc `multiple=`*(self: AMQPBasic, multiple: bool) =
   case self.kind
   of AMQP_BASIC_ACK_SUBMETHOD:
     self.ack.flags.multiple = multiple
@@ -845,7 +845,7 @@ proc requeue*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `requeue=`*(self: AMQPBasic, requeue: bool): bool =
+proc `requeue=`*(self: AMQPBasic, requeue: bool) =
   case self.kind
   of AMQP_BASIC_REJECT_SUBMETHOD:
     self.reject.flags.requeue = requeue
