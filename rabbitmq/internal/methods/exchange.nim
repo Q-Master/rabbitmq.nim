@@ -1,297 +1,416 @@
-import tables
-import ./submethods
-import ../data
-import ../streams
+import std/[asyncdispatch, tables, strutils]
+import pkg/networkutils/buffered_socket
+import ../field
+import ../exceptions
 
 const EXCHANGE_METHODS* = 0x0028.uint16
-const EXCHANGE_DECLARE_METHOD_ID = 0x0028000A.uint32
-const EXCHANGE_DECLARE_OK_METHOD_ID = 0x0028000B.uint32
-const EXCHANGE_DELETE_METHOD_ID = 0x00280014.uint32
-const EXCHANGE_DELETE_OK_METHOD_ID = 0x00280015.uint32
-const EXCHANGE_BIND_METHOD_ID = 0x0028001E.uint32
-const EXCHANGE_BIND_OK_METHOD_ID = 0x0028001F.uint32
-const EXCHANGE_UNBIND_METHOD_ID = 0x00280028.uint32
-const EXCHANGE_UNBIND_OK_METHOD_ID = 0x00280033.uint32
+const EXCHANGE_DECLARE_METHOD_ID* = 0x0028000A.uint32
+const EXCHANGE_DECLARE_OK_METHOD_ID* = 0x0028000B.uint32
+const EXCHANGE_DELETE_METHOD_ID* = 0x00280014.uint32
+const EXCHANGE_DELETE_OK_METHOD_ID* = 0x00280015.uint32
+const EXCHANGE_BIND_METHOD_ID* = 0x0028001E.uint32
+const EXCHANGE_BIND_OK_METHOD_ID* = 0x0028001F.uint32
+const EXCHANGE_UNBIND_METHOD_ID* = 0x00280028.uint32
+const EXCHANGE_UNBIND_OK_METHOD_ID* = 0x00280033.uint32
 
 type
-  ExchangeVariants* = enum
-    NONE = 0
-    EXCHANGE_DECLARE_METHOD = (EXCHANGE_DECLARE_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_DECLARE_OK_METHOD = (EXCHANGE_DECLARE_OK_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_DELETE_METHOD = (EXCHANGE_DELETE_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_DELETE_OK_METHOD = (EXCHANGE_DELETE_OK_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_BIND_METHOD = (EXCHANGE_BIND_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_BIND_OK_METHOD = (EXCHANGE_BIND_OK_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_UNBIND_METHOD = (EXCHANGE_UNBIND_METHOD_ID and 0x0000FFFF).uint16
-    EXCHANGE_UNBIND_OK_METHOD = (EXCHANGE_UNBIND_OK_METHOD_ID and 0x0000FFFF).uint16
+  AMQPExchangeKind = enum
+    AMQP_EXCHANGE_NONE = 0
+    AMQP_EXCHANGE_DECLARE_SUBMETHOD = (EXCHANGE_DECLARE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD = (EXCHANGE_DECLARE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_DELETE_SUBMETHOD = (EXCHANGE_DELETE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_DELETE_OK_SUBMETHOD = (EXCHANGE_DELETE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_BIND_SUBMETHOD = (EXCHANGE_BIND_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_BIND_OK_SUBMETHOD = (EXCHANGE_BIND_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_UNBIND_SUBMETHOD = (EXCHANGE_UNBIND_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD = (EXCHANGE_UNBIND_OK_METHOD_ID and 0x0000FFFF).uint16
 
-type 
-  ExchangeMethod* = ref object of SubMethod
-    noWait*: bool
-    ticket*: uint16
-    exchange*: string
-    arguments*: TableRef[string, Field]
-    case indexLo*: ExchangeVariants
-    of EXCHANGE_DECLARE_METHOD:
-      etype*: string
-      passive*: bool
-      durable*: bool
-      autoDelete*: bool
-      internal*: bool
-    of EXCHANGE_DECLARE_OK_METHOD:
+  AMQPExchangeType* = enum
+    EXCHANGE_DIRECT = "direct"
+    EXCHANGE_FANOUT = "fanout"
+    EXCHANGE_TOPIC = "topic"
+    EXCHANGE_HEADERS = "headers"
+  
+  AMQPExchangeDeclareBits = object
+    passive {.bitsize: 1.}: bool
+    durable {.bitsize: 1.}: bool
+    autoDelete {.bitsize: 1.}: bool
+    internal {.bitsize: 1.}: bool
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 3.}: uint8
+
+  AMQPExchangeDeleteBits = object
+    ifUnused {.bitsize: 1.}: bool
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 6.}: uint8
+
+  AMQPExchangeBindUnbindBits = object
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPExchangeTicketObj = object of RootObj
+    ticket: uint16
+  
+  AMQPExchangeDeclareObj = object of AMQPExchangeTicketObj
+    exchange: string
+    eType: AMQPExchangeType
+    flags: AMQPExchangeDeclareBits
+    args: FieldTable
+  
+  AMQPExchangeDeleteObj = object of AMQPExchangeTicketObj
+    exchange: string
+    flags: AMQPExchangeDeleteBits
+
+  AMQPExchangeBindUnbindObj = object of AMQPExchangeTicketObj
+    destination: string
+    source: string
+    routingKey: string
+    flags: AMQPExchangeBindUnbindBits
+    args: FieldTable
+
+  AMQPExchange* = ref AMQPExchangeObj
+  AMQPExchangeObj* = object of RootObj
+    case kind*: AMQPExchangeKind
+    of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+      declare: AMQPExchangeDeclareObj
+    of AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD, 
+      AMQP_EXCHANGE_DELETE_OK_SUBMETHOD, 
+      AMQP_EXCHANGE_BIND_OK_SUBMETHOD, 
+      AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD:
       discard
-    of EXCHANGE_DELETE_METHOD:
-      ifUnused*: bool
-    of EXCHANGE_DELETE_OK_METHOD:
-      discard
-    of EXCHANGE_BIND_METHOD, EXCHANGE_UNBIND_METHOD:
-      destination*: string
-      source*: string
-      routingKey*: string
-    of EXCHANGE_BIND_OK_METHOD, EXCHANGE_UNBIND_OK_METHOD:
-      discard
+    of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+      del: AMQPExchangeDeleteObj
+    of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+      bindUnbind: AMQPExchangeBindUnbindObj
     else:
       discard
 
-proc decodeExchangeDeclare(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeDeclare(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeDeclareOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeDeclareOk(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeDelete(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeDelete(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeDeleteOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeDeleteOk(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeBind(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeBind(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeBindOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeBindOk(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeUnbind(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeUnbind(to: OutputStream, data: ExchangeMethod)
-proc decodeExchangeUnbindOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod)
-proc encodeExchangeUnbindOk(to: OutputStream, data: ExchangeMethod)
-
-proc decode*(_: type[ExchangeMethod], submethodId: ExchangeVariants, encoded: InputStream): (bool, seq[uint16], ExchangeMethod) =
-  case submethodId
-  of EXCHANGE_DECLARE_METHOD:
-    result = decodeExchangeDeclare(encoded)
-  of EXCHANGE_DECLARE_OK_METHOD:
-    result = decodeExchangeDeclareOk(encoded)
-  of EXCHANGE_DELETE_METHOD:
-    result = decodeExchangeDelete(encoded)
-  of EXCHANGE_DELETE_OK_METHOD:
-    result = decodeExchangeDeleteOk(encoded)
-  of EXCHANGE_BIND_METHOD:
-    result = decodeExchangeBind(encoded)
-  of EXCHANGE_BIND_OK_METHOD:
-    result = decodeExchangeBindOk(encoded)
-  of EXCHANGE_UNBIND_METHOD:
-    result = decodeExchangeUnbind(encoded)
-  of EXCHANGE_UNBIND_OK_METHOD:
-    result = decodeExchangeUnbindOk(encoded)
+proc len*(meth: AMQPExchange): int =
+  result = 0
+  case meth.kind:
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.declare.exchange.len+sizeInt8Uint8)
+    result.inc(($meth.declare.eType).len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.declare.args.len)
+  of AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_DELETE_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_BIND_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD:
+    result.inc(0)
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.del.exchange.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.bindUnbind.destination.len+sizeInt8Uint8)
+    result.inc(meth.bindUnbind.source.len+sizeInt8Uint8)
+    result.inc(meth.bindUnbind.routingKey.len+sizeInt8Uint8)
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.bindUnbind.args.len)
   else:
-      discard
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc encode*(to: OutputStream, data: ExchangeMethod) =
-  case data.indexLo
-  of EXCHANGE_DECLARE_METHOD:
-    to.encodeExchangeDeclare(data)
-  of EXCHANGE_DECLARE_OK_METHOD:
-    to.encodeExchangeDeclareOk(data)
-  of EXCHANGE_DELETE_METHOD:
-    to.encodeExchangeDelete(data)
-  of EXCHANGE_DELETE_OK_METHOD:
-    to.encodeExchangeDeleteOk(data)
-  of EXCHANGE_BIND_METHOD:
-    to.encodeExchangeBind(data)
-  of EXCHANGE_BIND_OK_METHOD:
-    to.encodeExchangeBindOk(data)
-  of EXCHANGE_UNBIND_METHOD:
-    to.encodeExchangeUnbind(data)
-  of EXCHANGE_UNBIND_OK_METHOD:
-    to.encodeExchangeUnbindOk(data)
+
+proc decode*(_: typedesc[AMQPExchange], s: AsyncBufferedSocket, t: uint32): Future[AMQPExchange] {.async.} =
+  case t:
+  of EXCHANGE_DECLARE_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_DECLARE_SUBMETHOD)
+    result.declare.ticket = await s.readBEU16()
+    result.declare.exchange = await s.decodeShortString()
+    result.declare.eType = parseEnum[AMQPExchangeType]((await s.decodeShortString()).toLowerAscii())
+    result.declare.flags = cast[AMQPExchangeDeclareBits](await s.readU8())
+    result.declare.args = await s.decodeTable()
+  of EXCHANGE_DECLARE_OK_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD)
+  of EXCHANGE_DELETE_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_DELETE_SUBMETHOD)
+    result.del.ticket = await s.readBEU16()
+    result.del.exchange = await s.decodeShortString()
+    result.del.flags = cast[AMQPExchangeDeleteBits](await s.readU8())
+  of EXCHANGE_DELETE_OK_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_DELETE_OK_SUBMETHOD)
+  of EXCHANGE_BIND_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_BIND_SUBMETHOD)
+    result.bindUnbind.ticket = await s.readBEU16()
+    result.bindUnbind.destination = await s.decodeShortString()
+    result.bindUnbind.source = await s.decodeShortString()
+    result.bindUnbind.routingKey = await s.decodeShortString()
+    result.bindUnbind.flags = cast[AMQPExchangeBindUnbindBits](await s.readU8())
+    result.bindUnbind.args = await s.decodeTable()
+  of EXCHANGE_BIND_OK_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_BIND_OK_SUBMETHOD)
+  of EXCHANGE_UNBIND_METHOD_ID:
+    result = AMQPExchange(kind: AMQP_EXCHANGE_UNBIND_SUBMETHOD)
+    result.bindUnbind.ticket = await s.readBEU16()
+    result.bindUnbind.destination = await s.decodeShortString()
+    result.bindUnbind.source = await s.decodeShortString()
+    result.bindUnbind.routingKey = await s.decodeShortString()
+    result.bindUnbind.flags = cast[AMQPExchangeBindUnbindBits](await s.readU8())
+    result.bindUnbind.args = await s.decodeTable()
   else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+proc encode*(meth: AMQPExchange, dst: AsyncBufferedSocket) {.async.} =
+  echo $meth.kind
+  case meth.kind:
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    await dst.writeBE(meth.declare.ticket)
+    await dst.encodeShortString(meth.declare.exchange)
+    await dst.encodeShortString($meth.declare.eType)
+    await dst.write(cast[uint8](meth.declare.flags))
+    await dst.encodeTable(meth.declare.args)
+  of AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_DELETE_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_BIND_OK_SUBMETHOD, 
+    AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD:
     discard
-
-#--------------- Exchange.Declare ---------------#
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    await dst.writeBE(meth.del.ticket)
+    await dst.encodeShortString(meth.del.exchange)
+    await dst.write(cast[uint8](meth.del.flags))
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    await dst.writeBE(meth.bindUnbind.ticket)
+    await dst.encodeShortString(meth.bindUnbind.destination)
+    await dst.encodeShortString(meth.bindUnbind.source)
+    await dst.encodeShortString(meth.bindUnbind.routingKey)
+    await dst.write(cast[uint8](meth.bindUnbind.flags))
+    await dst.encodeTable(meth.bindUnbind.args)
+  else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc newExchangeDeclare*(
-  ticket = 0.uint16, 
-  exchange="", 
-  etype="direct", 
-  passive=false, 
-  durable=false, 
-  autoDelete=false, 
-  internal=false, 
-  noWait=false, 
-  arguments: TableRef[string, Field]=nil): (bool, seq[uint16], ExchangeMethod) =
-  var res = ExchangeMethod(indexLo: EXCHANGE_DECLARE_METHOD)
-  res.ticket = ticket
-  res.exchange = exchange
-  res.etype = etype
-  res.passive = passive
-  res.durable = durable
-  res.autoDelete = autoDelete
-  res.internal = internal
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(EXCHANGE_DECLARE_OK_METHOD).uint16], res)
+  ticket:uint16, 
+  exchange: string, eType: AMQPExchangeType, 
+  passive, durable, autoDelete, internal, noWait: bool, 
+  args: FieldTable): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_DECLARE_SUBMETHOD,
+    declare: AMQPExchangeDeclareObj(
+      ticket: ticket,
+      exchange: exchange,
+      eType: eType,
+      flags: AMQPExchangeDeclareBits(
+        passive: passive,
+        durable: durable,
+        autoDelete: autoDelete,
+        internal: internal,
+        noWait: noWait
+      ),
+      args: args
+    )
+  )
 
-proc decodeExchangeDeclare(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, exchange) = encoded.readShortString()
-  let (_, eType) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let passive = (bbuf and 0x01) != 0
-  let durable = (bbuf and 0x02) != 0
-  let autoDelete = (bbuf and 0x04) != 0
-  let internal = (bbuf and 0x08) != 0
-  let noWait = (bbuf and 0x10) != 0
-  result = newExchangeDeclare(ticket, exchange, eType, passive, durable, autoDelete, internal, noWait, arguments)
+proc newExchangeDeclareOk*(): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD
+  )
 
-proc encodeExchangeDeclare(to: OutputStream, data: ExchangeMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-    (if data.passive: 0x01 else: 0x00) or 
-    (if data.durable: 0x02 else: 0x00) or 
-    (if data.autoDelete: 0x04 else: 0x00) or 
-    (if data.internal: 0x08 else: 0x00) or 
-    (if data.noWait: 0x10 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.exchange)
-  to.writeShortString(data.etype)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
+proc newExchangeDelete*(ticket: uint16, exchange: string, ifUnused, noWait: bool): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_DELETE_SUBMETHOD,
+    del: AMQPExchangeDeleteObj(
+      ticket: ticket,
+      exchange: exchange,
+      flags: AMQPExchangeDeleteBits(
+        ifUnused: ifUnused,
+        noWait: noWait
+      )
+    )
+  )
 
-#--------------- Exchange.DeclareOk ---------------#
+proc newExchangeDeleteOk*(): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_DELETE_OK_SUBMETHOD
+  )
 
-proc newExchangeDeclareOk*(): (bool, seq[uint16], ExchangeMethod) =
-  result = (false, @[], ExchangeMethod(indexLo: EXCHANGE_DECLARE_OK_METHOD))
+proc newExchangeBind*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_BIND_SUBMETHOD,
+    bindUnbind: AMQPExchangeBindUnbindObj(
+      ticket: ticket,
+      destination: destination,
+      source: source,
+      routingKey: routingKey,
+      flags: AMQPExchangeBindUnbindBits(
+        noWait: noWait
+      ),
+      args: args
+    )
+  )
 
-proc decodeExchangeDeclareOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) = newExchangeDeclareOk()
+proc newExchangeBindOk*(): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_BIND_OK_SUBMETHOD
+  )
 
-proc encodeExchangeDeclareOk(to: OutputStream, data: ExchangeMethod) = discard
+proc newExchangeUnbind*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_UNBIND_SUBMETHOD,
+    bindUnbind: AMQPExchangeBindUnbindObj(
+      ticket: ticket,
+      destination: destination,
+      source: source,
+      routingKey: routingKey,
+      flags: AMQPExchangeBindUnbindBits(
+        noWait: noWait
+      ),
+      args: args
+    )
+  )
 
-#--------------- Exchange.Delete ---------------#
+proc newExchangeUnbindOk*(): AMQPExchange =
+  result = AMQPExchange(
+    kind: AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD
+  )
 
-proc newExchangeDelete*(ticket = 0.uint16, exchange = "", ifUnused = false, noWait = false): (bool, seq[uint16], ExchangeMethod) =
-  var res = ExchangeMethod(indexLo: EXCHANGE_DELETE_METHOD)
-  res.ticket = ticket
-  res.exchange = exchange
-  res.ifUnused = ifUnused
-  res.noWait = noWait
-  result = (true, @[ord(EXCHANGE_DELETE_OK_METHOD).uint16], res)
+proc ticket*(self: AMQPExchange): uint16 =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.ticket
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    result = self.del.ticket
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.ticket
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeExchangeDelete(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, exchange) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let ifUnused = (bbuf and 0x01) != 0
-  let noWait = (bbuf and 0x02) != 0
-  result = newExchangeDelete(ticket, exchange, ifUnused, noWait)
+proc exchange*(self: AMQPExchange): string =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.exchange
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    result = self.del.exchange
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeExchangeDelete(to: OutputStream, data: ExchangeMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-    (if data.ifUnused: 0x01 else: 0x00) or 
-    (if data.noWait: 0x02 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.exchange)
-  to.writeBigEndian8(bbuf)
+proc eType*(self: AMQPExchange): AMQPExchangeType =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.eType
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Exchange.DeleteOk ---------------#
+proc args*(self: AMQPExchange): FieldTable =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.args
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.args
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newExchangeDeleteOk*(): (bool, seq[uint16], ExchangeMethod) =
-  result = (false, @[], ExchangeMethod(indexLo: EXCHANGE_DELETE_OK_METHOD))
+proc destination*(self: AMQPExchange): string =
+  case self.kind
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.destination
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeExchangeDeleteOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) = newExchangeDeleteOk()
+proc source*(self: AMQPExchange): string =
+  case self.kind
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.source
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeExchangeDeleteOk(to: OutputStream, data: ExchangeMethod) = discard
+proc routingKey*(self: AMQPExchange): string =
+  case self.kind
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.routingKey
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Exchange.Bind ---------------#
+proc passive*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.passive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newExchangeBind*(
-  ticket = 0.uint16, 
-  destination = "", 
-  source = "", 
-  routingKey = "", 
-  noWait=false, 
-  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], ExchangeMethod) =
-  var res = ExchangeMethod(indexLo: EXCHANGE_BIND_METHOD)
-  res.destination = destination
-  res.source = source
-  res.routingKey = routingKey
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(EXCHANGE_BIND_OK_METHOD).uint16], res)
+proc `passive=`*(self: AMQPExchange, passive: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    self.declare.flags.passive = passive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeExchangeBind(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, destination) = encoded.readShortString()
-  let (_, source) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let noWait = (bbuf and 0x01) != 0
-  result = newExchangeBind(ticket, destination, source, routingKey, noWait, arguments)
+proc durable*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.durable
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeExchangeBind(to: OutputStream, data: ExchangeMethod) =
-  let bbuf: uint8 = (if data.noWait: 0x01 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.destination)
-  to.writeShortString(data.source)
-  to.writeShortString(data.routingKey)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
+proc `durable=`*(self: AMQPExchange, durable: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    self.declare.flags.durable = durable
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Exchange.BindOk ---------------#
+proc autoDelete*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.autoDelete
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newExchangeBindOk*(): (bool, seq[uint16], ExchangeMethod) =
-  result = (false, @[], ExchangeMethod(indexLo: EXCHANGE_BIND_OK_METHOD))
+proc `autoDelete=`*(self: AMQPExchange, autoDelete: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    self.declare.flags.autoDelete = autoDelete
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeExchangeBindOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) = newExchangeBindOk()
+proc internal*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.internal
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeExchangeBindOk(to: OutputStream, data: ExchangeMethod) = discard
+proc `internal=`*(self: AMQPExchange, internal: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    self.declare.flags.internal = internal
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Exchange.Unbind ---------------#
+proc ifUnused*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    result = self.del.flags.ifUnused
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newExchangeUnbind*(
-  ticket = 0.uint16, 
-  destination = "", 
-  source = "", 
-  routingKey = "", 
-  noWait=false, 
-  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], ExchangeMethod) =
-  var res = ExchangeMethod(indexLo: EXCHANGE_UNBIND_METHOD)
-  res.destination = destination
-  res.source = source
-  res.routingKey = routingKey
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(EXCHANGE_UNBIND_OK_METHOD).uint16], res)
+proc `ifUnused=`*(self: AMQPExchange, ifUnused: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    self.del.flags.ifUnused = ifUnused
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeExchangeUnbind(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, destination) = encoded.readShortString()
-  let (_, source) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let noWait = (bbuf and 0x01) != 0
-  result = newExchangeUnbind(ticket, destination, source, routingKey, noWait, arguments)
+proc noWait*(self: AMQPExchange): bool =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.noWait
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    result = self.del.flags.noWait
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    result = self.bindUnbind.flags.noWait
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeExchangeUnbind(to: OutputStream, data: ExchangeMethod) =
-  let bbuf: uint8 = (if data.noWait: 0x01 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.destination)
-  to.writeShortString(data.source)
-  to.writeShortString(data.routingKey)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
-
-#--------------- Exchange.UnbindOk ---------------#
-
-proc newExchangeUnbindOk*(): (bool, seq[uint16], ExchangeMethod) =
-  result = (false, @[], ExchangeMethod(indexLo: EXCHANGE_UNBIND_OK_METHOD))
-
-proc decodeExchangeUnbindOk(encoded: InputStream): (bool, seq[uint16], ExchangeMethod) = newExchangeUnbindOk()
-
-proc encodeExchangeUnbindOk(to: OutputStream, data: ExchangeMethod) = discard
+proc `noWait=`*(self: AMQPExchange, noWait: bool) =
+  case self.kind
+  of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
+    self.declare.flags.noWait = noWait
+  of AMQP_EXCHANGE_DELETE_SUBMETHOD:
+    self.del.flags.noWait = noWait
+  of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
+    self.bindUnbind.flags.noWait = noWait
+  else:
+    raise newException(FieldDefect, "No such field")

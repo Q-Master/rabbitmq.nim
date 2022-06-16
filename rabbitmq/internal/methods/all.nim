@@ -8,8 +8,9 @@ import ./channel
 import ./basic
 import ./access
 import ./confirm
+import ./exchange
 
-export connection, channel, basic, access, confirm
+export connection, channel, basic, access, confirm, exchange
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -38,6 +39,15 @@ type
     AMQP_ACCESS_REQUEST_METHOD = ACCESS_REQUEST_METHOD_ID
     AMQP_ACCESS_REQUEST_OK_METHOD = ACCESS_REQUEST_OK_METHOD_ID
 
+    AMQP_EXCHANGE_DECLARE_METHOD_ID = EXCHANGE_DECLARE_METHOD_ID
+    AMQP_EXCHANGE_DECLARE_OK_METHOD_ID = EXCHANGE_DECLARE_OK_METHOD_ID
+    AMQP_EXCHANGE_DELETE_METHOD_ID = EXCHANGE_DELETE_METHOD_ID
+    AMQP_EXCHANGE_DELETE_OK_METHOD_ID = EXCHANGE_DELETE_OK_METHOD_ID
+    AMQP_EXCHANGE_BIND_METHOD_ID = EXCHANGE_BIND_METHOD_ID
+    AMQP_EXCHANGE_BIND_OK_METHOD_ID = EXCHANGE_BIND_OK_METHOD_ID
+    AMQP_EXCHANGE_UNBIND_METHOD_ID = EXCHANGE_UNBIND_METHOD_ID
+    AMQP_EXCHANGE_UNBIND_OK_METHOD_ID = EXCHANGE_UNBIND_OK_METHOD_ID
+
     AMQP_CONFIRM_SELECT_METHOD = CONFIRM_SELECT_METHOD_ID
     AMQP_CONFIRM_SELECT_OK_METHOD = CONFIRM_SELECT_OK_METHOD_ID
 
@@ -46,6 +56,7 @@ type
     CONNECTION = CONNECTION_METHODS
     CHANNEL = CHANNEL_METHODS
     ACCESS = ACCESS_METHODS
+    EXCHANGE = EXCHANGE_METHODS
     BASIC = BASIC_METHODS
     CONFIRM = CONFIRM_METHODS
 
@@ -63,6 +74,8 @@ type
       accessObj*: AMQPAccess
     of CONFIRM:
       confirmObj*: AMQPConfirm
+    of EXCHANGE:
+      exchangeObj*: AMQPExchange
     else:
       discard
 
@@ -83,6 +96,8 @@ proc len*(meth: AMQPMethod): int =
     result.inc(meth.accessObj.len)
   of CONFIRM:
     result.inc(meth.confirmObj.len)
+  of EXCHANGE:
+    result.inc(meth.exchangeObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -101,6 +116,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.accessObj = await AMQPAccess.decode(src, methodId)
   of CONFIRM:
     result.confirmObj = await AMQPConfirm.decode(src, methodId)
+  of EXCHANGE:
+    result.exchangeObj = await AMQPExchange.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -117,6 +134,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.accessObj.encode(dst)
   of CONFIRM:
     await meth.confirmObj.encode(dst)
+  of EXCHANGE:
+    await meth.exchangeObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -284,3 +303,41 @@ proc newConfirmSelectMethod*(noWait: bool): AMQPMethod =
 proc neConfirmSelectOkMethod*(): AMQPMethod =
   result = newMethod(CONFIRM_SELECT_OK_METHOD_ID)
   result.confirmObj = newConfirmSelectOk()
+
+#-- Exchange
+
+proc newExchangeDeclareMethod*(
+  ticket:uint16, 
+  exchange: string, eType: AMQPExchangeType, 
+  passive, durable, autoDelete, internal, noWait: bool, 
+  args: FieldTable): AMQPMethod =
+  result = newMethod(EXCHANGE_DECLARE_METHOD_ID)
+  result.exchangeObj = newExchangeDeclare(ticket, exchange, eType, passive, durable, autoDelete, internal, noWait, args)
+
+proc newExchangeDeclareOkMethod*(): AMQPMethod =
+  result = newMethod(EXCHANGE_DECLARE_OK_METHOD_ID)
+  result.exchangeObj = newExchangeDeclareOk()
+
+proc newExchangeDeleteMethod*(ticket: uint16, exchange: string, ifUnused, noWait: bool): AMQPMethod =
+  result = newMethod(EXCHANGE_DELETE_METHOD_ID)
+  result.exchangeObj = newExchangeDelete(ticket, exchange, ifUnused, noWait)
+
+proc newExchangeDeleteOkMethod*(): AMQPMethod =
+  result = newMethod(EXCHANGE_DELETE_OK_METHOD_ID)
+  result.exchangeObj = newExchangeDeleteOk()
+
+proc newExchangeBindMethod*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPMethod =
+  result = newMethod(EXCHANGE_BIND_METHOD_ID)
+  result.exchangeObj = newExchangeBind(ticket, destination, source, routingKey, noWait, args)
+
+proc newExchangeBindOkMethod*(): AMQPMethod =
+  result = newMethod(EXCHANGE_BIND_OK_METHOD_ID)
+  result.exchangeObj = newExchangeBindOk()
+
+proc newExchangeUnbindMethod*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPMethod =
+  result = newMethod(EXCHANGE_UNBIND_METHOD_ID)
+  result.exchangeObj = newExchangeUnbind(ticket, destination, source, routingKey, noWait, args)
+
+proc newExchangeUnbindOkMethod*(): AMQPMethod =
+  result = newMethod(EXCHANGE_UNBIND_OK_METHOD_ID)
+  result.exchangeObj = newExchangeUnbindOk()
