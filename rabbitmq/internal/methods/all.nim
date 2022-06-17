@@ -9,8 +9,9 @@ import ./basic
 import ./access
 import ./confirm
 import ./exchange
+import ./queue
 
-export connection, channel, basic, access, confirm, exchange
+export connection, channel, basic, access, confirm, exchange, queue
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -48,6 +49,17 @@ type
     AMQP_EXCHANGE_UNBIND_METHOD_ID = EXCHANGE_UNBIND_METHOD_ID
     AMQP_EXCHANGE_UNBIND_OK_METHOD_ID = EXCHANGE_UNBIND_OK_METHOD_ID
 
+    AMQP_QUEUE_DECLARE_METHOD_ID = QUEUE_DECLARE_METHOD_ID
+    AMQP_QUEUE_DECLARE_OK_METHOD_ID = QUEUE_DECLARE_OK_METHOD_ID
+    AMQP_QUEUE_BIND_METHOD_ID = QUEUE_BIND_METHOD_ID
+    AMQP_QUEUE_BIND_OK_METHOD_ID = QUEUE_BIND_OK_METHOD_ID
+    AMQP_QUEUE_PURGE_METHOD_ID = QUEUE_PURGE_METHOD_ID
+    AMQP_QUEUE_PURGE_OK_METHOD_ID = QUEUE_PURGE_OK_METHOD_ID
+    AMQP_QUEUE_DELETE_METHOD_ID = QUEUE_DELETE_METHOD_ID
+    AMQP_QUEUE_DELETE_OK_METHOD_ID = QUEUE_DELETE_OK_METHOD_ID
+    AMQP_QUEUE_UNBIND_METHOD_ID = QUEUE_UNBIND_METHOD_ID
+    AMQP_QUEUE_UNBIND_OK_METHOD_ID = QUEUE_UNBIND_OK_METHOD_ID
+
     AMQP_CONFIRM_SELECT_METHOD = CONFIRM_SELECT_METHOD_ID
     AMQP_CONFIRM_SELECT_OK_METHOD = CONFIRM_SELECT_OK_METHOD_ID
 
@@ -57,6 +69,7 @@ type
     CHANNEL = CHANNEL_METHODS
     ACCESS = ACCESS_METHODS
     EXCHANGE = EXCHANGE_METHODS
+    QUEUE = QUEUE_METHODS
     BASIC = BASIC_METHODS
     CONFIRM = CONFIRM_METHODS
 
@@ -76,6 +89,8 @@ type
       confirmObj*: AMQPConfirm
     of EXCHANGE:
       exchangeObj*: AMQPExchange
+    of QUEUE:
+      queueObj*: AMQPQueue
     else:
       discard
 
@@ -98,6 +113,8 @@ proc len*(meth: AMQPMethod): int =
     result.inc(meth.confirmObj.len)
   of EXCHANGE:
     result.inc(meth.exchangeObj.len)
+  of QUEUE:
+    result.inc(meth.queueObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -118,6 +135,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.confirmObj = await AMQPConfirm.decode(src, methodId)
   of EXCHANGE:
     result.exchangeObj = await AMQPExchange.decode(src, methodId)
+  of QUEUE:
+    result.queueObj = await AMQPQueue.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -136,6 +155,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.confirmObj.encode(dst)
   of EXCHANGE:
     await meth.exchangeObj.encode(dst)
+  of QUEUE:
+    await meth.queueObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -341,3 +362,47 @@ proc newExchangeUnbindMethod*(ticket: uint16, destination, source, routingKey: s
 proc newExchangeUnbindOkMethod*(): AMQPMethod =
   result = newMethod(EXCHANGE_UNBIND_OK_METHOD_ID)
   result.exchangeObj = newExchangeUnbindOk()
+
+#-- Queue
+
+proc newQueueDeclareMethod*(ticket: uint16, queue: string, 
+  passive, durable, exclusive, autoDelete, noWait: bool, 
+  args: FieldTable): AMQPMethod =
+  result = newMethod(QUEUE_DECLARE_METHOD_ID)
+  result.queueObj = newQueueDeclare(ticket, queue, passive, durable, exclusive, autoDelete, noWait, args)
+
+proc newQueueDeclareOkMethod*(queue: string, messageCount, consumerCount: uint32): AMQPMethod =
+  result = newMethod(QUEUE_DECLARE_METHOD_ID)
+  result.queueObj = newQueueDeclareOk(queue, messageCount, consumerCount)
+
+proc newQueueBindMethod*(ticket: uint16, queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPMethod =
+  result = newMethod(QUEUE_BIND_METHOD_ID)
+  result.queueObj = newQueueBind(ticket, queue, exchange, routingKey, noWait, args)
+
+proc newQueueBindOkMethod*(): AMQPMethod =
+  result = newMethod(QUEUE_BIND_OK_METHOD_ID)
+  result.queueObj = newQueueBindOk()
+
+proc newQueuePurgeMethod*(ticket: uint16, queue: string, noWait: bool): AMQPMethod =
+  result = newMethod(QUEUE_PURGE_METHOD_ID)
+  result.queueObj = newQueuePurge(ticket, queue, noWait)
+
+proc newQueuePurgeOkMethod*(messageCount: uint32): AMQPMethod =
+  result = newMethod(QUEUE_PURGE_OK_METHOD_ID)
+  result.queueObj = newQueuePurgeOk(messageCount)
+
+proc newQueueDeleteMethod*(ticket: uint16, queue: string, ifUnused, ifEmpty, noWait: bool): AMQPMethod =
+  result = newMethod(QUEUE_DELETE_METHOD_ID)
+  result.queueObj = newQueueDelete(ticket, queue, ifUnused, ifEmpty, noWait)
+
+proc newQueueDeleteOkMethod*(messageCount: uint32): AMQPMethod =
+  result = newMethod(QUEUE_DELETE_OK_METHOD_ID)
+  result.queueObj = newQueueDeleteOk(messageCount)
+
+proc newQueueUnbindMethod*(ticket: uint16, queue, exchange, routingKey: string, args: FieldTable): AMQPMethod =
+  result = newMethod(QUEUE_UNBIND_METHOD_ID)
+  result.queueObj = newQueueUnbind(ticket, queue, exchange, routingKey, args)
+
+proc newQueueUnbindOkMethod*(): AMQPMethod =
+  result = newMethod(QUEUE_UNBIND_OK_METHOD_ID)
+  result.queueObj = newQueueUnbindOk()

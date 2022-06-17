@@ -1,360 +1,531 @@
-import tables
-import ./submethods
-import ../data
-import ../streams
+import std/[asyncdispatch, tables]
+import pkg/networkutils/buffered_socket
+import ../field
+import ../exceptions
 
 const QUEUE_METHODS* = 0x0032.uint16
-const QUEUE_DECLARE_METHOD_ID = 0x0032000A.uint32
-const QUEUE_DECLARE_OK_METHOD_ID = 0x0032000B.uint32
-const QUEUE_BIND_METHOD_ID = 0x00320014.uint32
-const QUEUE_BIND_OK_METHOD_ID = 0x00320015.uint32
-const QUEUE_PURGE_METHOD_ID = 0x0032001E.uint32
-const QUEUE_PURGE_OK_METHOD_ID = 0x0032001F.uint32
-const QUEUE_DELETE_METHOD_ID = 0x00320028.uint32
-const QUEUE_DELETE_OK_METHOD_ID = 0x00320029.uint32
-const QUEUE_UNBIND_METHOD_ID = 0x00320032.uint32
-const QUEUE_UNBIND_OK_METHOD_ID = 0x00320033.uint32
+const QUEUE_DECLARE_METHOD_ID* = 0x0032000A.uint32
+const QUEUE_DECLARE_OK_METHOD_ID* = 0x0032000B.uint32
+const QUEUE_BIND_METHOD_ID* = 0x00320014.uint32
+const QUEUE_BIND_OK_METHOD_ID* = 0x00320015.uint32
+const QUEUE_PURGE_METHOD_ID* = 0x0032001E.uint32
+const QUEUE_PURGE_OK_METHOD_ID* = 0x0032001F.uint32
+const QUEUE_DELETE_METHOD_ID* = 0x00320028.uint32
+const QUEUE_DELETE_OK_METHOD_ID* = 0x00320029.uint32
+const QUEUE_UNBIND_METHOD_ID* = 0x00320032.uint32
+const QUEUE_UNBIND_OK_METHOD_ID* = 0x00320033.uint32
 
 type
-  QueueVariants* = enum
-    NONE = 0
-    QUEUE_DECLARE_METHOD = (QUEUE_DECLARE_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_DECLARE_OK_METHOD = (QUEUE_DECLARE_OK_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_BIND_METHOD = (QUEUE_BIND_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_BIND_OK_METHOD = (QUEUE_BIND_OK_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_PURGE_METHOD = (QUEUE_PURGE_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_PURGE_OK_METHOD = (QUEUE_PURGE_OK_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_DELETE_METHOD = (QUEUE_DELETE_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_DELETE_OK_METHOD = (QUEUE_DELETE_OK_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_UNBIND_METHOD = (QUEUE_UNBIND_METHOD_ID and 0x0000FFFF).uint16
-    QUEUE_UNBIND_OK_METHOD = (QUEUE_UNBIND_OK_METHOD_ID and 0x0000FFFF).uint16
+  AMQPQueueKind = enum
+    AMQP_QUEUE_NONE = 0
+    AMQP_QUEUE_DECLARE_SUBMETHOD = (QUEUE_DECLARE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_DECLARE_OK_SUBMETHOD = (QUEUE_DECLARE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_BIND_SUBMETHOD = (QUEUE_BIND_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_BIND_OK_SUBMETHOD = (QUEUE_BIND_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_PURGE_SUBMETHOD = (QUEUE_PURGE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_PURGE_OK_SUBMETHOD = (QUEUE_PURGE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_DELETE_SUBMETHOD = (QUEUE_DELETE_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_DELETE_OK_SUBMETHOD = (QUEUE_DELETE_OK_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_UNBIND_SUBMETHOD = (QUEUE_UNBIND_METHOD_ID and 0x0000FFFF).uint16
+    AMQP_QUEUE_UNBIND_OK_SUBMETHOD = (QUEUE_UNBIND_OK_METHOD_ID and 0x0000FFFF).uint16
+  
+  AMQPQueueDeclareBits = object
+    passive {.bitsize: 1.}: bool
+    durable {.bitsize: 1.}: bool
+    exclusive {.bitsize: 1.}: bool
+    autoDelete {.bitsize: 1.}: bool
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 3.}: uint8
 
-type 
-  QueueMethod* = ref object of SubMethod
-    ticket*: uint16
-    queue*: string
-    noWait*: bool
-    arguments*: TableRef[string, Field]
-    case indexLo*: QueueVariants
-    of QUEUE_DECLARE_METHOD:
-      passive*: bool
-      durable*: bool
-      exclusive*: bool
-      autoDelete*: bool
-    of QUEUE_DECLARE_OK_METHOD, QUEUE_PURGE_OK_METHOD, QUEUE_DELETE_OK_METHOD:
-      messageCount*: uint32
-      consumerCount*: uint32
-    of QUEUE_BIND_METHOD, QUEUE_UNBIND_METHOD:
-      bQueue*: string
-      routingKey*: string
-    of QUEUE_BIND_OK_METHOD:
-      discard
-    of QUEUE_PURGE_METHOD:
-      discard
-    of QUEUE_DELETE_METHOD:
-      ifUnused*: bool
-      ifEmpty*: bool
-    of QUEUE_UNBIND_OK_METHOD:
+  AMQPQueueBindPurgeBits = object
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 7.}: uint8
+
+  AMQPQueueDeleteBits = object
+    ifUnused {.bitsize: 1.}: bool
+    ifEmpty {.bitsize: 1.}: bool
+    noWait {.bitsize: 1.}: bool
+    unused {.bitsize: 5.}: uint8
+
+  AMQPQueueTicketQueueObj = object of RootObj
+    ticket: uint16
+    queue: string
+  
+  AMQPQueueDeclareObj = object of AMQPQueueTicketQueueObj
+    flags: AMQPQueueDeclareBits
+    args: FieldTable
+
+  AMQPQueueDeclareOkObj = object of RootObj
+    queue: string
+    messageCount: uint32
+    consumerCount: uint32
+
+  AMQPQueueUnbindObj = object of AMQPQueueTicketQueueObj
+    exchange: string
+    routingKey: string
+    args: FieldTable
+
+  AMQPQueueBindObj = object of AMQPQueueUnbindObj
+    flags: AMQPQueueBindPurgeBits
+  
+  AMQPQueuePurgeObj = object of AMQPQueueTicketQueueObj
+    flags: AMQPQueueBindPurgeBits
+
+  AMQPQueuePurgeOkDeleteOkObj = object of RootObj
+    messageCount: uint32
+  
+  AMQPQueueDeleteObj = object of AMQPQueueTicketQueueObj
+    flags: AMQPQueueDeleteBits
+
+  AMQPQueue* = ref AMQPQueueObj
+  AMQPQueueObj* = object of RootObj
+    case kind*: AMQPQueueKind
+    of AMQP_QUEUE_DECLARE_SUBMETHOD:
+      declare: AMQPQueueDeclareObj
+    of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+      declareOk: AMQPQueueDeclareOkObj
+    of AMQP_QUEUE_BIND_SUBMETHOD:
+      qBind: AMQPQueueBindObj
+    of AMQP_QUEUE_PURGE_SUBMETHOD:
+      purge: AMQPQueuePurgeObj
+    of AMQP_QUEUE_DELETE_SUBMETHOD:
+      del: AMQPQueueDeleteObj
+    of AMQP_QUEUE_PURGE_OK_SUBMETHOD, AMQP_QUEUE_DELETE_OK_SUBMETHOD:
+      purgeOkDeleteOk: AMQPQueuePurgeOkDeleteOkObj
+    of AMQP_QUEUE_UNBIND_SUBMETHOD:
+      unbind: AMQPQueueUnbindObj
+    of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
       discard
     else:
       discard
 
-proc decodeQueueDeclare(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueDeclare(to: OutputStream, data: QueueMethod)
-proc decodeQueueDeclareOk(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueDeclareOk(to: OutputStream, data: QueueMethod)
-proc decodeQueueBind(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueBind(to: OutputStream, data: QueueMethod)
-proc decodeQueueBindOk(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueBindOk(to: OutputStream, data: QueueMethod)
-proc decodeQueuePurge(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueuePurge(to: OutputStream, data: QueueMethod)
-proc decodeQueuePurgeOk(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueuePurgeOk(to: OutputStream, data: QueueMethod)
-proc decodeQueueDelete(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueDelete(to: OutputStream, data: QueueMethod)
-proc decodeQueueDeleteOk(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueDeleteOk(to: OutputStream, data: QueueMethod)
-proc decodeQueueUnbind(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueUnbind(to: OutputStream, data: QueueMethod)
-proc decodeQueueUnbindOk(encoded: InputStream): (bool, seq[uint16], QueueMethod)
-proc encodeQueueUnbindOk(to: OutputStream, data: QueueMethod)
-
-proc decode*(_: type[QueueMethod], submethodId: QueueVariants, encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  case submethodId
-  of QUEUE_DECLARE_METHOD:
-    result = decodeQueueDeclare(encoded)
-  of QUEUE_DECLARE_OK_METHOD:
-    result = decodeQueueDeclareOk(encoded)
-  of QUEUE_BIND_METHOD:
-    result = decodeQueueBind(encoded)
-  of QUEUE_BIND_OK_METHOD:
-    result = decodeQueueBindOk(encoded)
-  of QUEUE_PURGE_METHOD:
-    result = decodeQueuePurge(encoded)
-  of QUEUE_PURGE_OK_METHOD:
-    result = decodeQueuePurgeOk(encoded)
-  of QUEUE_DELETE_METHOD:
-    result = decodeQueueDelete(encoded)
-  of QUEUE_DELETE_OK_METHOD:
-    result = decodeQueueDeleteOk(encoded)
-  of QUEUE_UNBIND_METHOD:
-    result = decodeQueueUnbind(encoded)
-  of QUEUE_UNBIND_OK_METHOD:
-    result = decodeQueueUnbindOk(encoded)
+proc len*(meth: AMQPQueue): int =
+  result = 0
+  case meth.kind:
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.declare.queue.shortStringLen())
+    result.inc(sizeInt8Uint8)
+    result.inc(meth.declare.args.len)
+  of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+    result.inc(meth.declareOk.queue.shortStringLen())
+    result.inc(sizeInt32Uint32+sizeInt32Uint32)
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.qBind.queue.shortStringLen())
+    result.inc(meth.qBind.exchange.shortStringLen())
+    result.inc(meth.qBind.routingKey.shortStringLen())
+    result.inc(sizeInt8Uint8)
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.purge.queue.shortStringLen())
+    result.inc(sizeInt8Uint8)
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.del.queue.shortStringLen())
+    result.inc(sizeInt8Uint8)
+  of AMQP_QUEUE_PURGE_OK_SUBMETHOD, AMQP_QUEUE_DELETE_OK_SUBMETHOD:
+    result.inc(sizeInt32Uint32)
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result.inc(sizeInt16Uint16)
+    result.inc(meth.unbind.queue.shortStringLen())
+    result.inc(meth.unbind.exchange.shortStringLen())
+    result.inc(meth.unbind.routingKey.shortStringLen())
+  of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
+    result.inc(0)
   else:
-      discard
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-proc encode*(to: OutputStream, data: QueueMethod) =
-  case data.indexLo
-  of QUEUE_DECLARE_METHOD:
-    to.encodeQueueDeclare(data)
-  of QUEUE_DECLARE_OK_METHOD:
-    to.encodeQueueDeclareOk(data)
-  of QUEUE_BIND_METHOD:
-    to.encodeQueueBind(data)
-  of QUEUE_BIND_OK_METHOD:
-    to.encodeQueueBindOk(data)
-  of QUEUE_PURGE_METHOD:
-    to.encodeQueuePurge(data)
-  of QUEUE_PURGE_OK_METHOD:
-    to.encodeQueuePurgeOk(data)
-  of QUEUE_DELETE_METHOD:
-    to.encodeQueueDelete(data)
-  of QUEUE_DELETE_OK_METHOD:
-    to.encodeQueueDeleteOk(data)
-  of QUEUE_UNBIND_METHOD:
-    to.encodeQueueUnbind(data)
-  of QUEUE_UNBIND_OK_METHOD:
-    to.encodeQueueUnbindOk(data)
+proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[AMQPQueue] {.async.} =
+  case t:
+  of QUEUE_DECLARE_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_DECLARE_SUBMETHOD)
+    result.declare.ticket = await s.readBEU16()
+    result.declare.queue = await s.decodeShortString()
+    result.declare.flags = cast[AMQPQueueDeclareBits](await s.readU8())
+    result.declare.args = await s.decodeTable()
+  of QUEUE_DECLARE_OK_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_DECLARE_OK_SUBMETHOD)
+    result.declareOk.queue = await s.decodeShortString()
+    result.declareOk.messageCount = await s.readBEU32()
+    result.declareOk.consumerCount = await s.readBEU32()
+  of QUEUE_BIND_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_BIND_SUBMETHOD)
+    result.qBind.ticket = await s.readBEU16()
+    result.qBind.queue = await s.decodeShortString()
+    result.qBind.exchange = await s.decodeShortString()
+    result.qBind.routingKey = await s.decodeShortString()
+    result.qBind.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
+    result.qBind.args = await s.decodeTable()
+  of QUEUE_BIND_OK_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_BIND_OK_SUBMETHOD)
+  of QUEUE_PURGE_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_PURGE_SUBMETHOD)
+    result.purge.ticket = await s.readBEU16()
+    result.purge.queue = await s.decodeShortString()
+    result.purge.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
+  of QUEUE_PURGE_OK_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD)
+    result.declareOk.messageCount = await s.readBEU32()
+  of QUEUE_DELETE_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_DELETE_SUBMETHOD)
+    result.del.ticket = await s.readBEU16()
+    result.del.queue = await s.decodeShortString()
+    result.del.flags = cast[AMQPQueueDeleteBits](await s.readU8())
+  of QUEUE_DELETE_OK_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD)
+    result.declareOk.messageCount = await s.readBEU32()
+  of QUEUE_UNBIND_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_SUBMETHOD)
+    result.unbind.ticket = await s.readBEU16()
+    result.unbind.queue = await s.decodeShortString()
+    result.unbind.exchange = await s.decodeShortString()
+    result.unbind.routingKey = await s.decodeShortString()
+    result.unbind.args = await s.decodeTable()
+  of QUEUE_UNBIND_OK_METHOD_ID:
+    result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD)
   else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+
+proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
+  echo $meth.kind
+  case meth.kind:
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    await dst.writeBE(meth.declare.ticket)
+    await dst.encodeShortString(meth.declare.queue)
+    await dst.write(cast[uint8](meth.declare.flags))
+    await dst.encodeTable(meth.declare.args)
+  of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+    await dst.encodeShortString(meth.declareOk.queue)
+    await dst.writeBE(meth.declareOk.messageCount)
+    await dst.writeBE(meth.declareOk.consumerCount)
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    await dst.writeBE(meth.qBind.ticket)
+    await dst.encodeShortString(meth.qBind.queue)
+    await dst.encodeShortString(meth.qBind.exchange)
+    await dst.encodeShortString(meth.qBind.routingKey)
+    await dst.write(cast[uint8](meth.qBind.flags))
+    await dst.encodeTable(meth.qBind.args)
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    await dst.writeBE(meth.purge.ticket)
+    await dst.encodeShortString(meth.purge.queue)
+    await dst.write(cast[uint8](meth.purge.flags))
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    await dst.writeBE(meth.del.ticket)
+    await dst.encodeShortString(meth.del.queue)
+    await dst.write(cast[uint8](meth.del.flags))
+  of AMQP_QUEUE_PURGE_OK_SUBMETHOD, AMQP_QUEUE_DELETE_OK_SUBMETHOD:
+    await dst.writeBE(meth.purgeOkDeleteOk.messageCount)
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    await dst.writeBE(meth.unbind.ticket)
+    await dst.encodeShortString(meth.unbind.queue)
+    await dst.encodeShortString(meth.unbind.exchange)
+    await dst.encodeShortString(meth.unbind.routingKey)
+    await dst.encodeTable(meth.unbind.args)
+  of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
     discard
+  else:
+    raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
-#--------------- Queue.Declare ---------------#
 
-proc newQueueDeclare*(
-  ticket = 0.uint16, 
-  queue="", 
-  passive=false, 
-  durable=false, 
-  exclusive=false,
-  autoDelete=false, 
-  noWait=false, 
-  arguments: TableRef[string, Field]=nil): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_DECLARE_METHOD)
-  res.ticket = ticket
-  res.queue = queue
-  res.passive = passive
-  res.durable = durable
-  res.exclusive = exclusive
-  res.autoDelete = autoDelete
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(QUEUE_DECLARE_OK_METHOD).uint16], res)
+proc newQueueDeclare*(ticket: uint16, queue: string, 
+  passive, durable, exclusive, autoDelete, noWait: bool, 
+  args: FieldTable): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_DECLARE_SUBMETHOD, 
+    declare: AMQPQueueDeclareObj(
+      ticket: ticket,
+      queue: queue,
+      flags: AMQPQueueDeclareBits(
+        passive: passive,
+        durable: durable,
+        exclusive: exclusive,
+        autoDelete: autoDelete,
+        noWait: noWait
+      ),
+      args: args
+    )
+  )
 
-proc decodeQueueDeclare(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let passive = (bbuf and 0x01) != 0
-  let durable = (bbuf and 0x02) != 0
-  let exclusive = (bbuf and 0x04) != 0
-  let autoDelete = (bbuf and 0x08) != 0
-  let noWait = (bbuf and 0x10) != 0
-  result = newQueueDeclare(ticket, queue, passive, durable, exclusive, autoDelete, noWait, arguments)
+proc newQueueDeclareOk*(queue: string, messageCount, consumerCount: uint32): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_DECLARE_OK_SUBMETHOD, 
+    declareOk: AMQPQueueDeclareOkObj(
+      queue: queue,
+      messageCount: messageCount,
+      consumerCount: consumerCount
+    )
+  )
 
-proc encodeQueueDeclare(to: OutputStream, data: QueueMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-    (if data.passive: 0x01 else: 0x00) or 
-    (if data.durable: 0x02 else: 0x00) or 
-    (if data.exclusive: 0x04 else: 0x00) or 
-    (if data.autoDelete: 0x08 else: 0x00) or 
-    (if data.noWait: 0x10 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
+proc newQueueBind*(ticket: uint16, queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_BIND_SUBMETHOD, 
+    qBind: AMQPQueueBindObj(
+      ticket: ticket,
+      queue: queue,
+      exchange: exchange,
+      routingKey: routingKey,
+      flags: AMQPQueueBindPurgeBits(
+        noWait: noWait
+      ),
+      args: args
+    )
+  )
 
-#--------------- Queue.DeclareOk ---------------#
+proc newQueueBindOk*(): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_BIND_OK_SUBMETHOD
+  )
 
-proc newQueueDeclareOk*(queue="", messageCount=0.uint32, consumerCount=0.uint32): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_DECLARE_OK_METHOD)
-  res.queue = queue
-  res.messageCount = messageCount
-  res.consumerCount = consumerCount
-  result = (false, @[], res)
+proc newQueuePurge*(ticket: uint16, queue: string, noWait: bool): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_PURGE_SUBMETHOD, 
+    purge: AMQPQueuePurgeObj(
+      ticket: ticket,
+      queue: queue,
+      flags: AMQPQueueBindPurgeBits(
+        noWait: noWait
+      )
+    )
+  )
 
-proc decodeQueueDeclareOk(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, queue) = encoded.readShortString()
-  let (_, messageCount) = encoded.readBigEndianU32()
-  let (_, consumerCount) = encoded.readBigEndianU32()
-  result = newQueueDeclareOk(queue, messageCount, consumerCount)
+proc newQueuePurgeOk*(messageCount: uint32): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD, 
+    purgeOkDeleteOk: AMQPQueuePurgeOkDeleteOkObj(
+      messageCount: messageCount
+    )
+  )
 
-proc encodeQueueDeclareOk(to: OutputStream, data: QueueMethod) =
-  to.writeShortString(data.queue)
-  to.writeBigEndian32(data.messageCount)
-  to.writeBigEndian32(data.consumerCount)
+proc newQueueDelete*(ticket: uint16, queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_DELETE_SUBMETHOD, 
+    del: AMQPQueueDeleteObj(
+      ticket: ticket,
+      queue: queue,
+      flags: AMQPQueueDeleteBits(
+        ifUnused: ifUnused,
+        ifEmpty: ifEmpty,
+        noWait: noWait
+      )
+    )
+  )
 
-#--------------- Queue.Bind ---------------#
+proc newQueueDeleteOk*(messageCount: uint32): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD, 
+    purgeOkDeleteOk: AMQPQueuePurgeOkDeleteOkObj(
+      messageCount: messageCount
+    )
+  )
 
-proc newQueueBind*(
-  ticket = 0.uint16, 
-  queue = "", 
-  bQueue = "", 
-  routingKey = "", 
-  noWait=false, 
-  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_BIND_METHOD)
-  res.queue = queue
-  res.bQueue = bQueue
-  res.routingKey = routingKey
-  res.noWait = noWait
-  res.arguments = arguments
-  result = (true, @[ord(QUEUE_BIND_OK_METHOD).uint16], res)
+proc newQueueUnbind*(ticket: uint16, queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_UNBIND_SUBMETHOD, 
+    unbind: AMQPQueueBindObj(
+      ticket: ticket,
+      queue: queue,
+      exchange: exchange,
+      routingKey: routingKey,
+      args: args
+    )
+  )
 
-proc decodeQueueBind(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bQueue) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let (_, arguments) = encoded.decodeTable()
-  let noWait = (bbuf and 0x01) != 0
-  result = newQueueBind(ticket, queue, bQueue, routingKey, noWait, arguments)
+proc newQueueUnbindOk*(): AMQPQueue =
+  result = AMQPQueue(
+    kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD
+  )
 
-proc encodeQueueBind(to: OutputStream, data: QueueMethod) =
-  let bbuf: uint8 = (if data.noWait: 0x01 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeShortString(data.bQueue)
-  to.writeShortString(data.routingKey)
-  to.writeBigEndian8(bbuf)
-  to.encodeTable(data.arguments)
+proc ticket*(self: AMQPQueue): uint16 =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.ticket
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.ticket
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result = self.unbind.ticket
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    result = self.purge.ticket
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result = self.del.ticket
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Queue.BindOk ---------------#
+proc queue*(self: AMQPQueue): string =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.queue
+  of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+    result = self.declareOk.queue
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.queue
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result = self.unbind.queue
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    result = self.purge.queue
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result = self.del.queue
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueueBindOk*(): (bool, seq[uint16], QueueMethod) =
-  result = (false, @[], QueueMethod(indexLo: QUEUE_BIND_OK_METHOD))
+proc args*(self: AMQPQueue): FieldTable =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.args
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.args
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result = self.unbind.args
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeQueueBindOk(encoded: InputStream): (bool, seq[uint16], QueueMethod) = newQueueBindOk()
+proc messageCount*(self: AMQPQueue): uint32 =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+    result = self.declareOk.messageCount
+  of AMQP_QUEUE_PURGE_OK_SUBMETHOD, AMQP_QUEUE_DELETE_OK_SUBMETHOD:
+    result = self.purgeOkDeleteOk.messageCount
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeQueueBindOk(to: OutputStream, data: QueueMethod) = discard
+proc exchange*(self: AMQPQueue): string =
+  case self.kind
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.exchange
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result = self.unbind.exchange
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Queue.Purge ---------------#
+proc routingKey*(self: AMQPQueue): string =
+  case self.kind
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.routingKey
+  of AMQP_QUEUE_UNBIND_SUBMETHOD:
+    result = self.unbind.routingKey
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueuePurge*(ticket = 0.uint16, queue="", noWait=false): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_PURGE_METHOD)
-  res.ticket = ticket
-  res.queue = queue
-  res.noWait = noWait
-  result = (true, @[ord(QUEUE_PURGE_OK_METHOD).uint16], res)
+proc consumerCount*(self: AMQPQueue): uint32 =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
+    result = self.declareOk.consumerCount
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeQueuePurge(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let noWait = (bbuf and 0x01) != 0
-  result = newQueuePurge(ticket, queue, noWait)
 
-proc encodeQueuePurge(to: OutputStream, data: QueueMethod) =
-  let bbuf: uint8 = (if data.noWait: 0x01 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeBigEndian8(bbuf)
+#[
+  AMQPQueueDeleteObj = object of AMQPQueueTicketQueueObj
+    ifUnused {.bitsize: 1.}: bool
+    ifEmpty {.bitsize: 1.}: bool
+]#
 
-#--------------- Queue.PurgeOk ---------------#
+proc passive*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.passive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueuePurgeOk*(messageCount = 0.uint32): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_PURGE_OK_METHOD)
-  res.messageCount = messageCount
-  result = (false, @[], res)
+proc `passive=`*(self: AMQPQueue, passive: bool) =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    self.declare.flags.passive = passive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeQueuePurgeOk(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, messageCount) = encoded.readBigEndianU32()
-  result = newQueuePurgeOk(messageCount)
+proc durable*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.durable
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeQueuePurgeOk(to: OutputStream, data: QueueMethod) =
-  to.writeBigEndian32(data.messageCount)
+proc `durable=`*(self: AMQPQueue, durable: bool) =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    self.declare.flags.durable = durable
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Queue.Delete ---------------#
+proc exclusive*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueueDelete*(ticket = 0.uint16, queue="", ifUnused=false, ifEmpty=false, noWait=false): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_DELETE_METHOD)
-  res.ticket = ticket
-  res.queue = queue
-  res.ifUnused = ifUnused
-  res.ifEmpty = ifEmpty
-  res.noWait = noWait
-  result = (true, @[ord(QUEUE_DELETE_OK_METHOD).uint16], res)
+proc `exclusive=`*(self: AMQPQueue, exclusive: bool) =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    self.declare.flags.exclusive = exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeQueueDelete(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bbuf) = encoded.readBigEndianU8()
-  let ifUnused = (bbuf and 0x01) != 0
-  let ifEmpty = (bbuf and 0x02) != 0
-  let noWait = (bbuf and 0x04) != 0
-  result = newQueueDelete(ticket, queue, ifUnused, ifEmpty, noWait)
+proc autoDelete*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.autoDelete
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeQueueDelete(to: OutputStream, data: QueueMethod) =
-  let bbuf: uint8 = 0x00.uint8 or 
-    (if data.ifUnused: 0x01 else: 0x00) or 
-    (if data.ifEmpty: 0x02 else: 0x00) or 
-    (if data.noWait: 0x04 else: 0x00)
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeBigEndian8(bbuf)
+proc `autoDelete=`*(self: AMQPQueue, autoDelete: bool) =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    self.declare.flags.autoDelete = autoDelete
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Queue.DeleteOk ---------------#
+proc noWait*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    result = self.declare.flags.noWait
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    result = self.qBind.flags.noWait
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    result = self.purge.flags.noWait
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result = self.del.flags.noWait
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueueDeleteOk*(messageCount = 0.uint32): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_DELETE_OK_METHOD)
-  res.messageCount = messageCount
-  result = (false, @[], res)
+proc `noWait=`*(self: AMQPQueue, noWait: bool) =
+  case self.kind
+  of AMQP_QUEUE_DECLARE_SUBMETHOD:
+    self.declare.flags.noWait = noWait
+  of AMQP_QUEUE_BIND_SUBMETHOD:
+    self.qBind.flags.noWait = noWait
+  of AMQP_QUEUE_PURGE_SUBMETHOD:
+    self.purge.flags.noWait = noWait
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    self.del.flags.noWait = noWait
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc decodeQueueDeleteOk(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, messageCount) = encoded.readBigEndianU32()
-  result = newQueueDeleteOk(messageCount)
+proc ifUnused*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result = self.del.flags.ifUnused
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc encodeQueueDeleteOk(to: OutputStream, data: QueueMethod) =
-  to.writeBigEndian32(data.messageCount)
+proc `ifUnused=`*(self: AMQPQueue, ifUnused: bool) =
+  case self.kind
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    self.del.flags.ifUnused = ifUnused
+  else:
+    raise newException(FieldDefect, "No such field")
 
-#--------------- Queue.Unbind ---------------#
+proc ifEmpty*(self: AMQPQueue): bool =
+  case self.kind
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    result = self.del.flags.ifEmpty
+  else:
+    raise newException(FieldDefect, "No such field")
 
-proc newQueueUnbind*(
-  ticket = 0.uint16, 
-  queue = "", 
-  bQueue = "", 
-  routingKey = "", 
-  arguments: TableRef[string, Field] = nil): (bool, seq[uint16], QueueMethod) =
-  var res = QueueMethod(indexLo: QUEUE_UNBIND_METHOD)
-  res.queue = queue
-  res.bQueue = bQueue
-  res.routingKey = routingKey
-  res.arguments = arguments
-  result = (true, @[ord(QUEUE_UNBIND_OK_METHOD).uint16], res)
-
-proc decodeQueueUnbind(encoded: InputStream): (bool, seq[uint16], QueueMethod) =
-  let (_, ticket) = encoded.readBigEndianU16()
-  let (_, queue) = encoded.readShortString()
-  let (_, bQueue) = encoded.readShortString()
-  let (_, routingKey) = encoded.readShortString()
-  let (_, arguments) = encoded.decodeTable()
-  result = newQueueUnbind(ticket, queue, bQueue, routingKey, arguments)
-
-proc encodeQueueUnbind(to: OutputStream, data: QueueMethod) =
-  to.writeBigEndian16(data.ticket)
-  to.writeShortString(data.queue)
-  to.writeShortString(data.bQueue)
-  to.writeShortString(data.routingKey)
-  to.encodeTable(data.arguments)
-
-#--------------- Queue.UnbindOk ---------------#
-
-proc newQueueUnbindOk*(): (bool, seq[uint16], QueueMethod) =
-  result = (false, @[], QueueMethod(indexLo: QUEUE_UNBIND_OK_METHOD))
-
-proc decodeQueueUnbindOk(encoded: InputStream): (bool, seq[uint16], QueueMethod) = newQueueUnbindOk()
-
-proc encodeQueueUnbindOk(to: OutputStream, data: QueueMethod) = discard
+proc `ifEmpty=`*(self: AMQPQueue, ifEmpty: bool) =
+  case self.kind
+  of AMQP_QUEUE_DELETE_SUBMETHOD:
+    self.del.flags.ifEmpty = ifEmpty
+  else:
+    raise newException(FieldDefect, "No such field")

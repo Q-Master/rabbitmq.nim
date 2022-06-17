@@ -2,6 +2,7 @@ type
     InvalidFieldTypeException* = object of CatchableError
     InvalidFrameException* = object of CatchableError
     InvalidFrameMethodException* = object of CatchableError
+    InvalidShortStringSizeException* = object of CatchableError
     RMQConnectionException* = object of CatchableError
     RMQConnectionFailed* = object of RMQConnectionException
     RMQConnectionFrameError* = object of RMQConnectionException

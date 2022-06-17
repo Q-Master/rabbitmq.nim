@@ -111,6 +111,11 @@ proc len*(f: FieldTable): int =
     result.inc(k.len() + sizeInt8Uint8)
     result.inc(v.len() + sizeInt8Uint8)
 
+proc shortStringLen*(s: string): int =
+  if s.len > sizeInt8Uint8:
+    raise newException(InvalidShortStringSizeException, "String is too long: " & $s.len)
+  result = s.len+sizeInt8Uint8
+
 proc `$`*(f: Field): string =
   case f.kind
   of dtBool:
