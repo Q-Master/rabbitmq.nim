@@ -195,44 +195,44 @@ proc len*(meth: AMQPBasic): int =
     result.inc(0)
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.consume.queue.len+sizeInt8Uint8)
-    result.inc(meth.consume.consumerTag.len+sizeInt8Uint8)
+    result.inc(meth.consume.queue.shortStringLen)
+    result.inc(meth.consume.consumerTag.shortStringLen)
     result.inc(sizeInt8Uint8)
     result.inc(meth.consume.args.len)
   of AMQP_BASIC_CONSUME_OK_SUBMETHOD:
-    result.inc(meth.consume.consumerTag.len+sizeInt8Uint8)
+    result.inc(meth.consume.consumerTag.shortStringLen)
   of AMQP_BASIC_CANCEL_SUBMETHOD:
-    result.inc(meth.cancel.consumerTag.len+sizeInt8Uint8)
+    result.inc(meth.cancel.consumerTag.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_BASIC_CANCEL_OK_SUBMETHOD:
-    result.inc(meth.cancel.consumerTag.len+sizeInt8Uint8)
+    result.inc(meth.cancel.consumerTag.shortStringLen)
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.publish.exchange.len+sizeInt8Uint8)
-    result.inc(meth.publish.routingKey.len+sizeInt8Uint8)
+    result.inc(meth.publish.exchange.shortStringLen)
+    result.inc(meth.publish.routingKey.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_BASIC_RETURN_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.ret.replyText.len+sizeInt8Uint8)
-    result.inc(meth.ret.exchange.len+sizeInt8Uint8)
-    result.inc(meth.ret.routingKey.len+sizeInt8Uint8)
+    result.inc(meth.ret.replyText.shortStringLen)
+    result.inc(meth.ret.exchange.shortStringLen)
+    result.inc(meth.ret.routingKey.shortStringLen)
   of AMQP_BASIC_DELIVER_SUBMETHOD:
-    result.inc(meth.deliver.consumerTag.len+sizeInt8Uint8)
+    result.inc(meth.deliver.consumerTag.shortStringLen)
     result.inc(sizeInt64Uint64)
     result.inc(sizeInt8Uint8)
-    result.inc(meth.deliver.exchange.len+sizeInt8Uint8)
-    result.inc(meth.deliver.routingKey.len+sizeInt8Uint8)
+    result.inc(meth.deliver.exchange.shortStringLen)
+    result.inc(meth.deliver.routingKey.shortStringLen)
   of AMQP_BASIC_GET_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.get.queue.len+sizeInt8Uint8)
+    result.inc(meth.get.queue.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_BASIC_GET_OK_SUBMETHOD:
     result.inc(sizeInt64Uint64+sizeInt8Uint8)
-    result.inc(meth.getOk.exchange.len+sizeInt8Uint8)
-    result.inc(meth.getOk.routingKey.len+sizeInt8Uint8)
+    result.inc(meth.getOk.exchange.shortStringLen)
+    result.inc(meth.getOk.routingKey.shortStringLen)
     result.inc(sizeInt32Uint32)
   of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
-    result.inc(meth.getEmpty.clusterId.len+sizeInt8Uint8)
+    result.inc(meth.getEmpty.clusterId.shortStringLen)
   of AMQP_BASIC_ACK_SUBMETHOD:
     result.inc(sizeInt64Uint64+sizeInt8Uint8)
   of AMQP_BASIC_REJECT_SUBMETHOD:

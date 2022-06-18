@@ -19,7 +19,7 @@ type
     active* {.bitsize: 1.}: bool
     write* {.bitsize: 1.}: bool
     read* {.bitsize: 1.}: bool
-    unused {.bitsize: 2.}: uint8
+    unused {.bitsize: 3.}: uint8
 
   AMQPAccess* = ref AMQPAccessObj
   AMQPAccessObj* = object of RootObj
@@ -84,3 +84,73 @@ proc newAccessRequestOk*(ticket: uint16): AMQPAccess =
     kind: AMQP_ACCESS_REQUEST_OK_SUBMETHOD, 
     ticket: ticket
   )
+
+proc exclusive*(self: AMQPAccess): bool =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result = self.requestFlags.exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `exclusive=`*(self: AMQPAccess, exclusive: bool) =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    self.requestFlags.exclusive = exclusive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc passive*(self: AMQPAccess): bool =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result = self.requestFlags.passive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `passive=`*(self: AMQPAccess, passive: bool) =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    self.requestFlags.passive = passive
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc active*(self: AMQPAccess): bool =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result = self.requestFlags.active
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `active=`*(self: AMQPAccess, active: bool) =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    self.requestFlags.active = active
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc write*(self: AMQPAccess): bool =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result = self.requestFlags.write
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `write=`*(self: AMQPAccess, write: bool) =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    self.requestFlags.write = write
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc read*(self: AMQPAccess): bool =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    result = self.requestFlags.read
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `read=`*(self: AMQPAccess, read: bool) =
+  case self.kind
+  of AMQP_ACCESS_REQUEST_SUBMETHOD:
+    self.requestFlags.read = read
+  else:
+    raise newException(FieldDefect, "No such field")

@@ -90,8 +90,8 @@ proc len*(meth: AMQPExchange): int =
   case meth.kind:
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.declare.exchange.len+sizeInt8Uint8)
-    result.inc(($meth.declare.eType).len+sizeInt8Uint8)
+    result.inc(meth.declare.exchange.shortStringLen)
+    result.inc(($meth.declare.eType).shortStringLen)
     result.inc(sizeInt8Uint8)
     result.inc(meth.declare.args.len)
   of AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD, 
@@ -101,13 +101,13 @@ proc len*(meth: AMQPExchange): int =
     result.inc(0)
   of AMQP_EXCHANGE_DELETE_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.del.exchange.len+sizeInt8Uint8)
+    result.inc(meth.del.exchange.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.bindUnbind.destination.len+sizeInt8Uint8)
-    result.inc(meth.bindUnbind.source.len+sizeInt8Uint8)
-    result.inc(meth.bindUnbind.routingKey.len+sizeInt8Uint8)
+    result.inc(meth.bindUnbind.destination.shortStringLen)
+    result.inc(meth.bindUnbind.source.shortStringLen)
+    result.inc(meth.bindUnbind.routingKey.shortStringLen)
     result.inc(sizeInt8Uint8)
     result.inc(meth.bindUnbind.args.len)
   else:

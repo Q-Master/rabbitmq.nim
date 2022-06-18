@@ -12,15 +12,15 @@ type
     AMQP_CONFIRM_SELECT_SUBMETHOD = (CONFIRM_SELECT_METHOD_ID and 0x0000FFFF).uint16
     AMQP_CONFIRM_SELECT_OK_SUBMETHOD = (CONFIRM_SELECT_OK_METHOD_ID and 0x0000FFFF).uint16
   
-  AMQPConfirmSelectBits* = object
-    noWait* {.bitsize: 1.}: bool
+  AMQPConfirmSelectBits = object
+    noWait {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
   AMQPConfirm* = ref AMQPConfirmObj
   AMQPConfirmObj* = object of RootObj
     case kind*: AMQPConfirmKind
     of AMQP_CONFIRM_SELECT_SUBMETHOD:
-      confirmFlags*: AMQPConfirmSelectBits
+      confirmFlags: AMQPConfirmSelectBits
     of AMQP_CONFIRM_SELECT_OK_SUBMETHOD:
       discard
     else:
@@ -68,3 +68,17 @@ proc newConfirmSelectOk*(): AMQPConfirm =
   result = AMQPConfirm(
     kind: AMQP_CONFIRM_SELECT_OK_SUBMETHOD
   )
+
+proc noWait*(self: AMQPConfirm): bool =
+  case self.kind
+  of AMQP_CONFIRM_SELECT_SUBMETHOD:
+    result = self.confirmFlags.noWait
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `noWait=`*(self: AMQPConfirm, noWait: bool) =
+  case self.kind
+  of AMQP_CONFIRM_SELECT_SUBMETHOD:
+    self.confirmFlags.noWait = noWait
+  else:
+    raise newException(FieldDefect, "No such field")

@@ -116,6 +116,10 @@ proc shortStringLen*(s: string): int =
     raise newException(InvalidShortStringSizeException, "String is too long: " & $s.len)
   result = s.len+sizeInt8Uint8
 
+proc stringLen*(s: string): int =
+  result = s.len+sizeInt32Uint32
+
+
 proc `$`*(f: Field): string =
   case f.kind
   of dtBool:

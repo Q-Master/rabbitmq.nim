@@ -33,8 +33,8 @@ type
     AMQP_CONNECTION_BLOCKED_SUBMETHOD = (CONNECTION_BLOCKED_METHOD_ID and 0x0000FFFF).uint16
     AMQP_CONNECTION_UNBLOCKED_SUBMETHOD = (CONNECTION_UNBLOCKED_METHOD_ID and 0x0000FFFF).uint16
 
-  AMQPConnectionOpenBits* = object
-    insist* {.bitsize: 1.}: bool
+  AMQPConnectionOpenBits = object
+    insist {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
     
   AMQPConnection* = ref AMQPConnectionObj
@@ -65,7 +65,7 @@ type
     of AMQP_CONNECTION_OPEN_SUBMETHOD:
       virtualHost*: string
       capabilities*: string
-      openFlags*: AMQPConnectionOpenBits
+      openFlags: AMQPConnectionOpenBits
     of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
       knownHosts: string
     of AMQP_CONNECTION_BLOCKED_SUBMETHOD:
@@ -80,32 +80,32 @@ proc len*(meth: AMQPConnection): int =
     result.inc(sizeInt8Uint8)
     result.inc(sizeInt8Uint8)
     result.inc(meth.serverProperties.len)
-    result.inc(meth.mechanisms.len + sizeInt32Uint32)
-    result.inc(meth.locales.len + sizeInt32Uint32)
+    result.inc(meth.mechanisms.stringLen)
+    result.inc(meth.locales.stringLen)
   of AMQP_CONNECTION_START_OK_SUBMETHOD:
     result.inc(meth.clientProps.len)
-    result.inc(meth.mechanism.len + sizeInt8Uint8)
-    result.inc(meth.response.len + sizeInt32Uint32)
-    result.inc(meth.locale.len + sizeInt8Uint8)
+    result.inc(meth.mechanism.shortStringLen)
+    result.inc(meth.response.stringLen)
+    result.inc(meth.locale.shortStringLen)
   of AMQP_CONNECTION_TUNE_SUBMETHOD, AMQP_CONNECTION_TUNE_OK_SUBMETHOD:
     result.inc(sizeInt16Uint16)
     result.inc(sizeInt32Uint32)
     result.inc(sizeInt16Uint16)
   of AMQP_CONNECTION_CLOSE_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.replyText.len + sizeInt8Uint8)
+    result.inc(meth.replyText.shortStringLen)
     result.inc(sizeInt16Uint16)
     result.inc(sizeInt16Uint16)
   of AMQP_CONNECTION_CLOSE_OK_SUBMETHOD, AMQP_CONNECTION_UNBLOCKED_SUBMETHOD:
     result.inc(0)
   of AMQP_CONNECTION_OPEN_SUBMETHOD:
-    result.inc(meth.virtualHost.len + sizeInt8Uint8)
-    result.inc(meth.capabilities.len + sizeInt8Uint8)
+    result.inc(meth.virtualHost.shortStringLen)
+    result.inc(meth.capabilities.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
-    result.inc(meth.knownHosts.len + sizeInt8Uint8)
+    result.inc(meth.knownHosts.shortStringLen)
   of AMQP_CONNECTION_BLOCKED_SUBMETHOD:
-    result.inc(meth.capabilities.len + sizeInt8Uint8)
+    result.inc(meth.capabilities.shortStringLen)
   else:
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
@@ -266,3 +266,17 @@ proc newConnectionBlocked*(reason: string): AMQPConnection =
 
 proc newConnectionUnblocked*(): AMQPConnection =
   result = AMQPConnection(kind: AMQP_CONNECTION_UNBLOCKED_SUBMETHOD)
+
+proc insist*(self: AMQPConnection): bool =
+  case self.kind
+  of AMQP_CONNECTION_OPEN_SUBMETHOD:
+    result = self.openFlags.insist
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `insist=`*(self: AMQPConnection, insist: bool) =
+  case self.kind
+  of AMQP_CONNECTION_OPEN_SUBMETHOD:
+    self.openFlags.insist = insist
+  else:
+    raise newException(FieldDefect, "No such field")

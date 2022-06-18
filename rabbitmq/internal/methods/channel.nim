@@ -22,8 +22,8 @@ type
     AMQP_CHANNEL_CLOSE_SUBMETHOD = (CHANNEL_CLOSE_METHOD_ID and 0x0000FFFF).uint16
     AMQP_CHANNEL_CLOSE_OK_SUBMETHOD = (CHANNEL_CLOSE_OK_METHOD_ID and 0x0000FFFF).uint16
 
-  AMQPChannelFlowBits* = object
-    active* {.bitsize: 1.}: bool
+  AMQPChannelFlowBits = object
+    active {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
   AMQPChannel* = ref AMQPChannelObj
@@ -34,7 +34,7 @@ type
     of AMQP_CHANNEL_OPEN_OK_SUBMETHOD:
       channelId*: string
     of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
-      flowFlags*: AMQPChannelFlowBits
+      flowFlags: AMQPChannelFlowBits
     of AMQP_CHANNEL_CLOSE_SUBMETHOD:
       replyCode*: uint16
       replyText*: string
@@ -49,14 +49,14 @@ proc len*(meth: AMQPChannel): int =
   result = 0
   case meth.kind:
   of AMQP_CHANNEL_OPEN_SUBMETHOD:
-    result.inc(meth.outOfBand.len + sizeInt8Uint8)
+    result.inc(meth.outOfBand.shortStringLen)
   of AMQP_CHANNEL_OPEN_OK_SUBMETHOD:
-    result.inc(meth.channelId.len + sizeInt32Uint32)
+    result.inc(meth.channelId.stringLen)
   of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
     result.inc(sizeInt8Uint8)
   of AMQP_CHANNEL_CLOSE_SUBMETHOD:
     result.inc(sizeInt16Uint16)
-    result.inc(meth.replyText.len + sizeInt8Uint8)
+    result.inc(meth.replyText.shortStringLen)
     result.inc(sizeInt16Uint16)
     result.inc(sizeInt16Uint16)
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
@@ -147,3 +147,17 @@ proc newChannelClose*(replyCode: uint16, replyText: string, classId: uint16, met
 
 proc newChannelCloseOk*(): AMQPChannel =
   result = AMQPChannel(kind: AMQP_CHANNEL_CLOSE_OK_SUBMETHOD)
+
+proc active*(self: AMQPChannel): bool =
+  case self.kind
+  of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
+    result = self.flowFlags.active
+  else:
+    raise newException(FieldDefect, "No such field")
+
+proc `active=`*(self: AMQPChannel, active: bool) =
+  case self.kind
+  of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
+    self.flowFlags.active = active
+  else:
+    raise newException(FieldDefect, "No such field")
