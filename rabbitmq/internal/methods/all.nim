@@ -10,8 +10,9 @@ import ./access
 import ./confirm
 import ./exchange
 import ./queue
+import ./tx
 
-export connection, channel, basic, access, confirm, exchange, queue
+export connection, channel, basic, access, confirm, exchange, queue, tx
 
 const NO_SUCH_METHOD_STR = "No such method"
 
@@ -63,6 +64,13 @@ type
     AMQP_CONFIRM_SELECT_METHOD = CONFIRM_SELECT_METHOD_ID
     AMQP_CONFIRM_SELECT_OK_METHOD = CONFIRM_SELECT_OK_METHOD_ID
 
+    AMQP_TX_SELECT_METHOD_ID = TX_SELECT_METHOD_ID
+    AMQP_TX_SELECT_OK_METHOD_ID = TX_SELECT_OK_METHOD_ID
+    AMQP_TX_COMMIT_METHOD_ID = TX_COMMIT_METHOD_ID
+    AMQP_TX_COMMIT_OK_METHOD_ID = TX_COMMIT_OK_METHOD_ID
+    AMQP_TX_ROLLBACK_METHOD_ID = TX_ROLLBACK_METHOD_ID
+    AMQP_TX_ROLLBACK_OK_METHOD_ID = TX_ROLLBACK_OK_METHOD_ID
+
   AMQPMetodKind* = enum
     NONE = 0
     CONNECTION = CONNECTION_METHODS
@@ -72,6 +80,7 @@ type
     QUEUE = QUEUE_METHODS
     BASIC = BASIC_METHODS
     CONFIRM = CONFIRM_METHODS
+    TX = TX_METHODS
 
   AMQPMethod* = ref AMQPMethodObj
   AMQPMethodObj* = object of RootObj
@@ -91,6 +100,8 @@ type
       exchangeObj*: AMQPExchange
     of QUEUE:
       queueObj*: AMQPQueue
+    of TX:
+      txObj*: AMQPTx
     else:
       discard
 
@@ -115,6 +126,8 @@ proc len*(meth: AMQPMethod): int =
     result.inc(meth.exchangeObj.len)
   of QUEUE:
     result.inc(meth.queueObj.len)
+  of TX:
+    result.inc(meth.txObj.len)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -137,6 +150,8 @@ proc decodeMethod*(src: AsyncBufferedSocket): Future[AMQPMethod] {.async.} =
     result.exchangeObj = await AMQPExchange.decode(src, methodId)
   of QUEUE:
     result.queueObj = await AMQPQueue.decode(src, methodId)
+  of TX:
+    result.txObj = await AMQPTx.decode(src, methodId)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
 
@@ -157,6 +172,8 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     await meth.exchangeObj.encode(dst)
   of QUEUE:
     await meth.queueObj.encode(dst)
+  of TX:
+    await meth.txObj.encode(dst)
   else:
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
@@ -406,3 +423,29 @@ proc newQueueUnbindMethod*(ticket: uint16, queue, exchange, routingKey: string, 
 proc newQueueUnbindOkMethod*(): AMQPMethod =
   result = newMethod(QUEUE_UNBIND_OK_METHOD_ID)
   result.queueObj = newQueueUnbindOk()
+
+#-- TX
+
+proc newTxSelectMethod*(): AMQPMethod =
+  result = newMethod(TX_SELECT_METHOD_ID)
+  result.txObj = newTxSelect()
+
+proc newTxSelectOkMethod*(): AMQPMethod =
+  result = newMethod(TX_SELECT_OK_METHOD_ID)
+  result.txObj = newTxSelectOk()
+
+proc newTxCommitMethod*(): AMQPMethod =
+  result = newMethod(TX_COMMIT_METHOD_ID)
+  result.txObj = newTxCommit()
+
+proc newTxCommitOkMethod*(): AMQPMethod =
+  result = newMethod(TX_COMMIT_OK_METHOD_ID)
+  result.txObj = newTxCommitOk()
+
+proc newTxRollbackMethod*(): AMQPMethod =
+  result = newMethod(TX_ROLLBACK_METHOD_ID)
+  result.txObj = newTxRollback()
+
+proc newTxRollbackOkMethod*(): AMQPMethod =
+  result = newMethod(TX_ROLLBACK_OK_METHOD_ID)
+  result.txObj = newTxRollbackOk()
