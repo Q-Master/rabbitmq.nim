@@ -345,36 +345,35 @@ proc neConfirmSelectOkMethod*(): AMQPMethod =
 #-- Exchange
 
 proc newExchangeDeclareMethod*(
-  ticket:uint16, 
   exchange: string, eType: AMQPExchangeType, 
   passive, durable, autoDelete, internal, noWait: bool, 
   args: FieldTable): AMQPMethod =
   result = newMethod(EXCHANGE_DECLARE_METHOD_ID)
-  result.exchangeObj = newExchangeDeclare(ticket, exchange, eType, passive, durable, autoDelete, internal, noWait, args)
+  result.exchangeObj = newExchangeDeclare(exchange, eType, passive, durable, autoDelete, internal, noWait, args)
 
 proc newExchangeDeclareOkMethod*(): AMQPMethod =
   result = newMethod(EXCHANGE_DECLARE_OK_METHOD_ID)
   result.exchangeObj = newExchangeDeclareOk()
 
-proc newExchangeDeleteMethod*(ticket: uint16, exchange: string, ifUnused, noWait: bool): AMQPMethod =
+proc newExchangeDeleteMethod*(exchange: string, ifUnused, noWait: bool): AMQPMethod =
   result = newMethod(EXCHANGE_DELETE_METHOD_ID)
-  result.exchangeObj = newExchangeDelete(ticket, exchange, ifUnused, noWait)
+  result.exchangeObj = newExchangeDelete(exchange, ifUnused, noWait)
 
 proc newExchangeDeleteOkMethod*(): AMQPMethod =
   result = newMethod(EXCHANGE_DELETE_OK_METHOD_ID)
   result.exchangeObj = newExchangeDeleteOk()
 
-proc newExchangeBindMethod*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPMethod =
+proc newExchangeBindMethod*(destination, source, routingKey: string, noWait: bool, args: FieldTable): AMQPMethod =
   result = newMethod(EXCHANGE_BIND_METHOD_ID)
-  result.exchangeObj = newExchangeBind(ticket, destination, source, routingKey, noWait, args)
+  result.exchangeObj = newExchangeBind(destination, source, routingKey, noWait, args)
 
 proc newExchangeBindOkMethod*(): AMQPMethod =
   result = newMethod(EXCHANGE_BIND_OK_METHOD_ID)
   result.exchangeObj = newExchangeBindOk()
 
-proc newExchangeUnbindMethod*(ticket: uint16, destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPMethod =
+proc newExchangeUnbindMethod*(destination, source, routingKey: string, noWait: bool, args: FieldTable): AMQPMethod =
   result = newMethod(EXCHANGE_UNBIND_METHOD_ID)
-  result.exchangeObj = newExchangeUnbind(ticket, destination, source, routingKey, noWait, args)
+  result.exchangeObj = newExchangeUnbind(destination, source, routingKey, noWait, args)
 
 proc newExchangeUnbindOkMethod*(): AMQPMethod =
   result = newMethod(EXCHANGE_UNBIND_OK_METHOD_ID)
@@ -382,43 +381,43 @@ proc newExchangeUnbindOkMethod*(): AMQPMethod =
 
 #-- Queue
 
-proc newQueueDeclareMethod*(ticket: uint16, queue: string, 
+proc newQueueDeclareMethod*(queue: string, 
   passive, durable, exclusive, autoDelete, noWait: bool, 
   args: FieldTable): AMQPMethod =
   result = newMethod(QUEUE_DECLARE_METHOD_ID)
-  result.queueObj = newQueueDeclare(ticket, queue, passive, durable, exclusive, autoDelete, noWait, args)
+  result.queueObj = newQueueDeclare(queue, passive, durable, exclusive, autoDelete, noWait, args)
 
 proc newQueueDeclareOkMethod*(queue: string, messageCount, consumerCount: uint32): AMQPMethod =
   result = newMethod(QUEUE_DECLARE_METHOD_ID)
   result.queueObj = newQueueDeclareOk(queue, messageCount, consumerCount)
 
-proc newQueueBindMethod*(ticket: uint16, queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPMethod =
+proc newQueueBindMethod*(queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPMethod =
   result = newMethod(QUEUE_BIND_METHOD_ID)
-  result.queueObj = newQueueBind(ticket, queue, exchange, routingKey, noWait, args)
+  result.queueObj = newQueueBind(queue, exchange, routingKey, noWait, args)
 
 proc newQueueBindOkMethod*(): AMQPMethod =
   result = newMethod(QUEUE_BIND_OK_METHOD_ID)
   result.queueObj = newQueueBindOk()
 
-proc newQueuePurgeMethod*(ticket: uint16, queue: string, noWait: bool): AMQPMethod =
+proc newQueuePurgeMethod*(queue: string, noWait: bool): AMQPMethod =
   result = newMethod(QUEUE_PURGE_METHOD_ID)
-  result.queueObj = newQueuePurge(ticket, queue, noWait)
+  result.queueObj = newQueuePurge(queue, noWait)
 
 proc newQueuePurgeOkMethod*(messageCount: uint32): AMQPMethod =
   result = newMethod(QUEUE_PURGE_OK_METHOD_ID)
   result.queueObj = newQueuePurgeOk(messageCount)
 
-proc newQueueDeleteMethod*(ticket: uint16, queue: string, ifUnused, ifEmpty, noWait: bool): AMQPMethod =
+proc newQueueDeleteMethod*(queue: string, ifUnused, ifEmpty, noWait: bool): AMQPMethod =
   result = newMethod(QUEUE_DELETE_METHOD_ID)
-  result.queueObj = newQueueDelete(ticket, queue, ifUnused, ifEmpty, noWait)
+  result.queueObj = newQueueDelete(queue, ifUnused, ifEmpty, noWait)
 
 proc newQueueDeleteOkMethod*(messageCount: uint32): AMQPMethod =
   result = newMethod(QUEUE_DELETE_OK_METHOD_ID)
   result.queueObj = newQueueDeleteOk(messageCount)
 
-proc newQueueUnbindMethod*(ticket: uint16, queue, exchange, routingKey: string, args: FieldTable): AMQPMethod =
+proc newQueueUnbindMethod*(queue, exchange, routingKey: string, args: FieldTable): AMQPMethod =
   result = newMethod(QUEUE_UNBIND_METHOD_ID)
-  result.queueObj = newQueueUnbind(ticket, queue, exchange, routingKey, args)
+  result.queueObj = newQueueUnbind(queue, exchange, routingKey, args)
 
 proc newQueueUnbindOkMethod*(): AMQPMethod =
   result = newMethod(QUEUE_UNBIND_OK_METHOD_ID)

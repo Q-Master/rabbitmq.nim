@@ -47,20 +47,18 @@ type
     noWait {.bitsize: 1.}: bool
     unused {.bitsize: 5.}: uint8
 
-  AMQPQueueTicketQueueObj = object of RootObj
-    ticket: uint16
+  AMQPQueueQueueObj = object of RootObj
     queue: string
   
-  AMQPQueueDeclareObj = object of AMQPQueueTicketQueueObj
+  AMQPQueueDeclareObj = object of AMQPQueueQueueObj
     flags: AMQPQueueDeclareBits
     args: FieldTable
 
-  AMQPQueueDeclareOkObj = object of RootObj
-    queue: string
+  AMQPQueueDeclareOkObj = object of AMQPQueueQueueObj
     messageCount: uint32
     consumerCount: uint32
 
-  AMQPQueueUnbindObj = object of AMQPQueueTicketQueueObj
+  AMQPQueueUnbindObj = object of AMQPQueueQueueObj
     exchange: string
     routingKey: string
     args: FieldTable
@@ -68,13 +66,13 @@ type
   AMQPQueueBindObj = object of AMQPQueueUnbindObj
     flags: AMQPQueueBindPurgeBits
   
-  AMQPQueuePurgeObj = object of AMQPQueueTicketQueueObj
+  AMQPQueuePurgeObj = object of AMQPQueueQueueObj
     flags: AMQPQueueBindPurgeBits
 
   AMQPQueuePurgeOkDeleteOkObj = object of RootObj
     messageCount: uint32
   
-  AMQPQueueDeleteObj = object of AMQPQueueTicketQueueObj
+  AMQPQueueDeleteObj = object of AMQPQueueQueueObj
     flags: AMQPQueueDeleteBits
 
   AMQPQueue* = ref AMQPQueueObj
@@ -140,7 +138,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
   case t:
   of QUEUE_DECLARE_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_DECLARE_SUBMETHOD)
-    result.declare.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.declare.queue = await s.decodeShortString()
     result.declare.flags = cast[AMQPQueueDeclareBits](await s.readU8())
     result.declare.args = await s.decodeTable()
@@ -151,7 +149,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.declareOk.consumerCount = await s.readBEU32()
   of QUEUE_BIND_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_BIND_SUBMETHOD)
-    result.qBind.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.qBind.queue = await s.decodeShortString()
     result.qBind.exchange = await s.decodeShortString()
     result.qBind.routingKey = await s.decodeShortString()
@@ -161,7 +159,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result = AMQPQueue(kind: AMQP_QUEUE_BIND_OK_SUBMETHOD)
   of QUEUE_PURGE_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_PURGE_SUBMETHOD)
-    result.purge.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.purge.queue = await s.decodeShortString()
     result.purge.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
   of QUEUE_PURGE_OK_METHOD_ID:
@@ -169,7 +167,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.declareOk.messageCount = await s.readBEU32()
   of QUEUE_DELETE_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_DELETE_SUBMETHOD)
-    result.del.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.del.queue = await s.decodeShortString()
     result.del.flags = cast[AMQPQueueDeleteBits](await s.readU8())
   of QUEUE_DELETE_OK_METHOD_ID:
@@ -177,7 +175,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.declareOk.messageCount = await s.readBEU32()
   of QUEUE_UNBIND_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_SUBMETHOD)
-    result.unbind.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.unbind.queue = await s.decodeShortString()
     result.unbind.exchange = await s.decodeShortString()
     result.unbind.routingKey = await s.decodeShortString()
@@ -191,7 +189,7 @@ proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
   echo $meth.kind
   case meth.kind:
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
-    await dst.writeBE(meth.declare.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.declare.queue)
     await dst.write(cast[uint8](meth.declare.flags))
     await dst.encodeTable(meth.declare.args)
@@ -200,24 +198,24 @@ proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
     await dst.writeBE(meth.declareOk.messageCount)
     await dst.writeBE(meth.declareOk.consumerCount)
   of AMQP_QUEUE_BIND_SUBMETHOD:
-    await dst.writeBE(meth.qBind.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.qBind.queue)
     await dst.encodeShortString(meth.qBind.exchange)
     await dst.encodeShortString(meth.qBind.routingKey)
     await dst.write(cast[uint8](meth.qBind.flags))
     await dst.encodeTable(meth.qBind.args)
   of AMQP_QUEUE_PURGE_SUBMETHOD:
-    await dst.writeBE(meth.purge.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.purge.queue)
     await dst.write(cast[uint8](meth.purge.flags))
   of AMQP_QUEUE_DELETE_SUBMETHOD:
-    await dst.writeBE(meth.del.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.del.queue)
     await dst.write(cast[uint8](meth.del.flags))
   of AMQP_QUEUE_PURGE_OK_SUBMETHOD, AMQP_QUEUE_DELETE_OK_SUBMETHOD:
     await dst.writeBE(meth.purgeOkDeleteOk.messageCount)
   of AMQP_QUEUE_UNBIND_SUBMETHOD:
-    await dst.writeBE(meth.unbind.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.unbind.queue)
     await dst.encodeShortString(meth.unbind.exchange)
     await dst.encodeShortString(meth.unbind.routingKey)
@@ -228,13 +226,12 @@ proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 
-proc newQueueDeclare*(ticket: uint16, queue: string, 
+proc newQueueDeclare*(queue: string, 
   passive, durable, exclusive, autoDelete, noWait: bool, 
   args: FieldTable): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_DECLARE_SUBMETHOD, 
     declare: AMQPQueueDeclareObj(
-      ticket: ticket,
       queue: queue,
       flags: AMQPQueueDeclareBits(
         passive: passive,
@@ -257,11 +254,10 @@ proc newQueueDeclareOk*(queue: string, messageCount, consumerCount: uint32): AMQ
     )
   )
 
-proc newQueueBind*(ticket: uint16, queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPQueue =
+proc newQueueBind*(queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_BIND_SUBMETHOD, 
     qBind: AMQPQueueBindObj(
-      ticket: ticket,
       queue: queue,
       exchange: exchange,
       routingKey: routingKey,
@@ -277,11 +273,10 @@ proc newQueueBindOk*(): AMQPQueue =
     kind: AMQP_QUEUE_BIND_OK_SUBMETHOD
   )
 
-proc newQueuePurge*(ticket: uint16, queue: string, noWait: bool): AMQPQueue =
+proc newQueuePurge*(queue: string, noWait: bool): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_PURGE_SUBMETHOD, 
     purge: AMQPQueuePurgeObj(
-      ticket: ticket,
       queue: queue,
       flags: AMQPQueueBindPurgeBits(
         noWait: noWait
@@ -297,11 +292,10 @@ proc newQueuePurgeOk*(messageCount: uint32): AMQPQueue =
     )
   )
 
-proc newQueueDelete*(ticket: uint16, queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueue =
+proc newQueueDelete*(queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_DELETE_SUBMETHOD, 
     del: AMQPQueueDeleteObj(
-      ticket: ticket,
       queue: queue,
       flags: AMQPQueueDeleteBits(
         ifUnused: ifUnused,
@@ -319,11 +313,10 @@ proc newQueueDeleteOk*(messageCount: uint32): AMQPQueue =
     )
   )
 
-proc newQueueUnbind*(ticket: uint16, queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
+proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_UNBIND_SUBMETHOD, 
     unbind: AMQPQueueBindObj(
-      ticket: ticket,
       queue: queue,
       exchange: exchange,
       routingKey: routingKey,
@@ -335,21 +328,6 @@ proc newQueueUnbindOk*(): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD
   )
-
-proc ticket*(self: AMQPQueue): uint16 =
-  case self.kind
-  of AMQP_QUEUE_DECLARE_SUBMETHOD:
-    result = self.declare.ticket
-  of AMQP_QUEUE_BIND_SUBMETHOD:
-    result = self.qBind.ticket
-  of AMQP_QUEUE_UNBIND_SUBMETHOD:
-    result = self.unbind.ticket
-  of AMQP_QUEUE_PURGE_SUBMETHOD:
-    result = self.purge.ticket
-  of AMQP_QUEUE_DELETE_SUBMETHOD:
-    result = self.del.ticket
-  else:
-    raise newException(FieldDefect, "No such field")
 
 proc queue*(self: AMQPQueue): string =
   case self.kind
@@ -412,13 +390,6 @@ proc consumerCount*(self: AMQPQueue): uint32 =
     result = self.declareOk.consumerCount
   else:
     raise newException(FieldDefect, "No such field")
-
-
-#[
-  AMQPQueueDeleteObj = object of AMQPQueueTicketQueueObj
-    ifUnused {.bitsize: 1.}: bool
-    ifEmpty {.bitsize: 1.}: bool
-]#
 
 proc passive*(self: AMQPQueue): bool =
   case self.kind

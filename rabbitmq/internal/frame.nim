@@ -1,7 +1,6 @@
 import std/[asyncdispatch]
 import pkg/networkutils/buffered_socket
 import ./spec
-import ./field
 import ./exceptions
 import ./methods/all
 import ./properties

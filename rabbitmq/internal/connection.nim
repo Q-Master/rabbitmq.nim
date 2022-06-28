@@ -1,4 +1,4 @@
-import std/[asyncdispatch, asyncnet, times, tables]
+import std/[asyncdispatch, times, tables, random, sets]
 import pkg/networkutils/buffered_socket
 import ./util/lists
 import ./methods/all
@@ -29,6 +29,7 @@ type
     frameMax: uint32
     heartbeat: uint16
     frames: SinglyLinkedList[Frame]
+    openedChannels: set[uint16]
 
 const
   DEFAULT_POOLSIZE = 5
@@ -37,9 +38,9 @@ const
 proc newRabbitMQConn(): RabbitMQConn
 proc disconnect(rabbit: RabbitMQConn): Future[void]
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.}
-proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.}
-proc enqueueFrame(conn: RabbitMQConn, f: Frame)
-proc requeueFrame(conn: RabbitMQConn, f: Frame)
+proc sendMethod*(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.}
+proc enqueueFrame*(conn: RabbitMQConn, f: Frame)
+proc requeueFrame*(conn: RabbitMQConn, f: Frame)
 
 proc connect*(pool: RabbitMQ, callback: proc (conn: RabbitMQConn): Future[void] {.closure, gcsafe.} = nil) {.async.} =
   for i in 0 ..< pool.pool.len:
@@ -87,6 +88,32 @@ proc acquire*(pool: RabbitMQ): Future[RabbitMQConn] {.async.} =
 proc release*(rabbit: RabbitMQConn) =
   rabbit.inuse = false
 
+proc acquireChannel*(rabbit: RabbitMQConn, chId: uint16 = 0): uint16 = 
+  result = chId
+  if chId == 0:
+    if rabbit.openedChannels.len >= rabbit.channelMax.int - 1:
+      var res: int
+      for i in rabbit.openedChannels:
+        res = i.int
+        break
+      raise newAMQPException(AMQPChannelsExhausted, "Channels are out", res)
+    while true:
+      result = rand(rabbit.openedChannels.len).uint16
+      if result notin rabbit.openedChannels:
+        break
+  else:
+    if result in rabbit.openedChannels:
+      raise newException(AMQPChannelInUse, "Channed already in use")
+  rabbit.openedChannels.incl(result)
+
+proc releaseChannel*(rabbit: RabbitMQConn, chId: uint16) =
+  if chId notin rabbit.openedChannels:
+    raise newException(AMQPChannelError, "Channel already released")
+  rabbit.openedChannels.excl(chId)
+
+proc channelExists*(rabbit: RabbitMQConn, chId: uint16): bool =
+  result = chId in rabbit.openedChannels
+
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE, timeout: int = 0): RabbitMQ =
   result.new
   result.pool.setLen(poolsize)
@@ -94,6 +121,7 @@ proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE, tim
   result.timeout = timeout
   result.closing = false
   result.hosts = addresses
+  randomize()
 
 proc newRabbitMQ*(address: RMQAddress, poolsize: int = DEFAULT_POOLSIZE, timeout: int = 0): RabbitMQ =
   let addrs = RMQAddresses()
@@ -173,13 +201,13 @@ proc simpleRPC*(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16, expectedM
     else:
       break
   if frame.meth.methodId == CONNECTION_CLOSE_METHOD_ID:
-    raise newException(RMQConnectionClosed, "Connection closed unexpectedly")
+    raiseException(frame.meth.connObj.replyCode)
   if frame.meth.methodId == CHANNEL_CLOSE_METHOD_ID:
-    raise newException(RMQChannelClosed, "Channel was closed unexpectedly")
+    raiseException(frame.meth.channelObj.replyCode)
   result = frame.meth
 
 proc closeConnection(conn: RabbitMQConn): Future[void] {.async.} =
-  let closeOk = await conn.simpleRPC(newConnectionCloseMethod(AMQP_REPLY_CODE, $AMQP_REPLY_CODE, 0, 0), 0, @[CONNECTION_CLOSE_OK_METHOD_ID])
+  let closeOk {.used.} = await conn.simpleRPC(newConnectionCloseMethod(AMQP_REPLY_CODE, $AMQP_REPLY_CODE, 0, 0), 0, @[CONNECTION_CLOSE_OK_METHOD_ID])
 
 proc disconnect(rabbit: RabbitMQConn): Future[void] {.async.} =
   if rabbit.connected:
@@ -191,13 +219,13 @@ proc disconnect(rabbit: RabbitMQConn): Future[void] {.async.} =
   rabbit.inuse = false
   rabbit.authenticated = false
 
-proc enqueueFrame(conn: RabbitMQConn, f: Frame) =
+proc enqueueFrame*(conn: RabbitMQConn, f: Frame) =
   conn.frames.add(f)
 
-proc requeueFrame(conn: RabbitMQConn, f: Frame) =
+proc requeueFrame*(conn: RabbitMQConn, f: Frame) =
   conn.frames.prepend(f)
 
-proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.} =
+proc sendMethod*(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.} =
   let frame = newMethodFrame(channel, meth)
   await conn.sock.encodeFrame(frame)
 

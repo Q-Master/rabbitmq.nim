@@ -1,4 +1,4 @@
-import std/[times, tables, asyncdispatch, options]
+import std/[times, asyncdispatch, options]
 import pkg/networkutils/buffered_socket
 import ./field
 import ./exceptions
