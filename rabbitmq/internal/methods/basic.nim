@@ -95,7 +95,6 @@ type
     consumerTag: string
   
   AMQPBasicConsumeObj = object of AMQPBasicConsumerTagObj
-    ticket: uint16
     queue: string
     flags: AMQPBasicConsumeBits
     args: FieldTable
@@ -108,7 +107,6 @@ type
     routingKey: string
 
   AMQPBasicPublishObj = object of AMQPBasicExchangeRoutingKeyObj
-    ticket: uint16
     flags: AMQPBasicPublishBits
 
   AMQPBasicReturnObj = object of AMQPBasicExchangeRoutingKeyObj
@@ -127,7 +125,6 @@ type
     flags: AMQPBasicRedeliveredBits
   
   AMQPBasicGetObj = object of RootObj
-    ticket: uint16
     queue: string
     flags: AMQPBasicGetBits
 
@@ -255,7 +252,7 @@ proc decode*(_: typedesc[AMQPBasic], s: AsyncBufferedSocket, t: uint32): Future[
     result = AMQPBasic(kind: AMQP_BASIC_QOS_OK_SUBMETHOD)
   of BASIC_CONSUME_METHOD_ID:
     result = AMQPBasic(kind: AMQP_BASIC_CONSUME_SUBMETHOD, consume: AMQPBasicConsumeObj())
-    result.consume.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.consume.queue = await s.decodeShortString()
     result.consume.consumerTag = await s.decodeShortString()
     result.consume.flags = cast[AMQPBasicConsumeBits](await s.readU8())
@@ -272,7 +269,7 @@ proc decode*(_: typedesc[AMQPBasic], s: AsyncBufferedSocket, t: uint32): Future[
     result.consumeCancelOk.consumerTag = await s.decodeShortString()
   of BASIC_PUBLISH_METHOD_ID:
     result = AMQPBasic(kind: AMQP_BASIC_PUBLISH_SUBMETHOD, publish: AMQPBasicPublishObj())
-    result.publish.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.publish.exchange = await s.decodeShortString()
     result.publish.routingKey = await s.decodeShortString()
     result.publish.flags = cast[AMQPBasicPublishBits](await s.readU8())
@@ -291,7 +288,7 @@ proc decode*(_: typedesc[AMQPBasic], s: AsyncBufferedSocket, t: uint32): Future[
     result.deliver.routingKey = await s.decodeShortString()
   of BASIC_GET_METHOD_ID:
     result = AMQPBasic(kind: AMQP_BASIC_GET_SUBMETHOD, get: AMQPBasicGetObj())
-    result.get.ticket = await s.readBEU16()
+    let ticket {.used.} = await s.readBEU16()
     result.get.queue = await s.decodeShortString()
     result.get.flags = cast[AMQPBasicGetBits](await s.readU8())
   of BASIC_GET_OK_METHOD_ID:
@@ -337,7 +334,7 @@ proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
   of AMQP_BASIC_QOS_OK_SUBMETHOD, AMQP_BASIC_RECOVER_OK_SUBMETHOD:
     discard
   of AMQP_BASIC_CONSUME_SUBMETHOD:
-    await dst.writeBE(meth.consume.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.consume.queue)
     await dst.encodeShortString(meth.consume.consumerTag)
     await dst.write(cast[uint8](meth.consume.flags))
@@ -348,7 +345,7 @@ proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
     await dst.encodeShortString(meth.cancel.consumerTag)
     await dst.write(cast[uint8](meth.cancel.flags))
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
-    await dst.writeBE(meth.publish.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.publish.exchange)
     await dst.encodeShortString(meth.publish.routingKey)
     await dst.write(cast[uint8](meth.publish.flags))
@@ -364,7 +361,7 @@ proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
     await dst.encodeShortString(meth.deliver.exchange)
     await dst.encodeShortString(meth.deliver.routingKey)
   of AMQP_BASIC_GET_SUBMETHOD:
-    await dst.writeBE(meth.get.ticket)
+    await dst.writeBE(0.uint16)
     await dst.encodeShortString(meth.get.queue)
     await dst.write(cast[uint8](meth.get.flags))
   of AMQP_BASIC_GET_OK_SUBMETHOD:
@@ -407,11 +404,10 @@ proc newBasicQosOk*(): AMQPBasic =
     kind: AMQP_BASIC_QOS_OK_SUBMETHOD
   )
 
-proc newBasicConsume*(ticket: uint16, queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPBasic =
+proc newBasicConsume*(queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPBasic =
   result = AMQPBasic(
     kind: AMQP_BASIC_CONSUME_SUBMETHOD,
     consume: AMQPBasicConsumeObj(
-      ticket: ticket,
       queue: queue,
       consumerTag: consumerTag,
       args: args,
@@ -451,11 +447,10 @@ proc newBasicCancelOk*(consumerTag: string): AMQPBasic =
     )
   )
 
-proc newBasicPublish*(ticket: uint16, exchange, routingKey: string, mandatory, immediate: bool): AMQPBasic =
+proc newBasicPublish*(exchange, routingKey: string, mandatory, immediate: bool): AMQPBasic =
   result = AMQPBasic(
     kind: AMQP_BASIC_PUBLISH_SUBMETHOD,
     publish: AMQPBasicPublishObj(
-      ticket: ticket,
       exchange: exchange,
       routingKey: routingKey,
       flags: AMQPBasicPublishBits(
@@ -490,11 +485,10 @@ proc newBasicDeliver*(consumerTag: string, deliveryTag: uint64, redelivered: boo
     )
   )
 
-proc newBasicGet*(ticket: uint16, queue: string, noAck: bool): AMQPBasic =
+proc newBasicGet*(queue: string, noAck: bool): AMQPBasic =
   result = AMQPBasic(
     kind: AMQP_BASIC_GET_SUBMETHOD,
     get: AMQPBasicGetObj(
-      ticket: ticket,
       queue: queue,
       flags: AMQPBasicGetBits(
         noAck: noAck
@@ -593,17 +587,6 @@ proc consumerTag*(self: AMQPBasic): string =
     result = self.cancel.consumerTag
   of AMQP_BASIC_DELIVER_SUBMETHOD:
     result = self.deliver.consumerTag
-  else:
-    raise newException(FieldDefect, "No such field")
-
-proc ticket*(self: AMQPBasic): uint16 =
-  case self.kind
-  of AMQP_BASIC_CONSUME_SUBMETHOD:
-    result = self.consume.ticket
-  of AMQP_BASIC_PUBLISH_SUBMETHOD:
-    result = self.publish.ticket
-  of AMQP_BASIC_GET_SUBMETHOD:
-    result = self.get.ticket
   else:
     raise newException(FieldDefect, "No such field")
 

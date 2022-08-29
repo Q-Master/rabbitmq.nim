@@ -43,6 +43,8 @@ type
   AMQPInternalError* = object of AMQPError
   AMQPChannelsExhausted* = object of AMQPError
   AMQPChannelInUse* = object of AMQPError
+  AMQPNoSuchChannel* = object of AMQPError
+  AMQPChannelClosed* = object of AMQPError
 
 type
   # Frame Errors

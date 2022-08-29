@@ -1,2 +1,2 @@
-import ./internal/[connection, address, exceptions, spec, frame, field, properties]
-export connection, address, exceptions, spec, frame, field, properties
+import ./internal/[address, exceptions, spec, frame, field, properties]
+export address, exceptions, spec, frame, field, properties

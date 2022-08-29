@@ -258,9 +258,9 @@ proc newBasicQosOkMethod*(): AMQPMethod =
   result = newMethod(BASIC_QOS_OK_METHOD_ID)
   result.basicObj = newBasicQosOk()
 
-proc newBasicConsumeMethod*(ticket: uint16, queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPMethod =
+proc newBasicConsumeMethod*(queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPMethod =
   result = newMethod(BASIC_CONSUME_METHOD_ID)
-  result.basicObj = newBasicConsume(ticket, queue, consumerTag, noLocal, noAck, exclusive, noWait, args)
+  result.basicObj = newBasicConsume(queue, consumerTag, noLocal, noAck, exclusive, noWait, args)
 
 proc newBasicConsumeOkMethod*(consumerTag: string): AMQPMethod =
   result = newMethod(BASIC_CONSUME_OK_METHOD_ID)
@@ -274,9 +274,9 @@ proc newBasicCancelOkMethod*(consumerTag=""): AMQPMethod =
   result = newMethod(BASIC_CANCEL_OK_METHOD_ID)
   result.basicObj = newBasicCancelOk(consumerTag)
 
-proc newBasicPublishMethod*(ticket: uint16, exchange, routingKey: string, mandatory, immediate: bool): AMQPMethod =
+proc newBasicPublishMethod*(exchange, routingKey: string, mandatory, immediate: bool): AMQPMethod =
   result = newMethod(BASIC_PUBLISH_METHOD_ID)
-  result.basicObj = newBasicPublish(ticket, exchange, routingKey, mandatory, immediate)
+  result.basicObj = newBasicPublish(exchange, routingKey, mandatory, immediate)
 
 proc newBasicReturnMethod*(replyCode: uint16, replyText, exchange, routingKey: string): AMQPMethod =
   result = newMethod(BASIC_RETURN_METHOD_ID)
@@ -286,9 +286,9 @@ proc newBasicDeliverMethod*(consumerTag: string, deliveryTag: uint64, redelivere
   result = newMethod(BASIC_DELIVER_METHOD_ID)
   result.basicObj = newBasicDeliver(consumerTag, deliveryTag, redelivered, exchange, routingKey)
 
-proc newBasicGetMethod*(ticket: uint16, queue: string, noAck: bool): AMQPMethod =
+proc newBasicGetMethod*(queue: string, noAck: bool): AMQPMethod =
   result = newMethod(BASIC_GET_METHOD_ID)
-  result.basicObj = newBasicGet(ticket, queue, noAck)
+  result.basicObj = newBasicGet(queue, noAck)
 
 proc newBasicGetOkMethod*(deliveryTag: uint64, redelivered: bool, exchange, routingKey: string, messageCount: uint32): AMQPMethod =
   result = newMethod(BASIC_GET_OK_METHOD_ID)

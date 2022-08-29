@@ -9,7 +9,7 @@ Class Grammar:
 import std/[asyncdispatch]
 import ../internal/methods/all
 import ../internal/[exceptions, field]
-import ./channel
+import ../connection
 
 type
   Exchange* = ref ExchangeObj
@@ -17,21 +17,26 @@ type
     exchangeId*: string
     channel: Channel
 
+proc newExchange*(exchangeId: string, channel: Channel): Exchange =
+  result.new
+  result.exchangeId = exchangeId
+  result.channel = channel
+
 proc exchangeDeclare*(
     channel: Channel, exchange: string, exchangeType: AMQPExchangeType,
     passive = false, durable = false, autoDelete = false, internal = false, noWait = false,
     args: FieldTable = nil
   ): Future[Exchange] {.async.} =
-  let res {.used.} = await channel.channelRPC(
+  let res {.used.} = await channel.rpc(
     newExchangeDeclareMethod(
       exchange, exchangeType, passive, durable, autoDelete, internal, noWait, args
     ), 
     @[EXCHANGE_DECLARE_OK_METHOD_ID]
   )
-  result = Exchange(exchangeId: exchange, channel: channel)
+  result = newExchange(exchange, channel)
 
 proc exchangeDelete*(exchange: Exchange, ifUnused = false, noWait = false) {.async.} =
-  let res {.used.} = await exchange.channel.channelRPC(
+  let res {.used.} = await exchange.channel.rpc(
     newExchangeDeleteMethod(
       exchange.exchangeId, ifUnused, noWait
     ), 
@@ -40,7 +45,7 @@ proc exchangeDelete*(exchange: Exchange, ifUnused = false, noWait = false) {.asy
 
 proc exchangeBind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
   try:
-    let res {.used.} = await src.channel.channelRPC(
+    let res {.used.} = await src.channel.rpc(
       newExchangeBindMethod(
         destination, src.exchangeId, routingKey, noWait, args
       ), 
@@ -55,7 +60,7 @@ proc exchangeBind*(src, destination : Exchange, routingKey: string, noWait=false
 
 proc exchangeUnbind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
   try:
-    let res {.used.} = await src.channel.channelRPC(
+    let res {.used.} = await src.channel.rpc(
       newExchangeUnbindMethod(
         destination, src.exchangeId, routingKey, noWait, args
       ), 

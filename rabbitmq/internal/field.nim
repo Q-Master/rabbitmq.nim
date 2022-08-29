@@ -112,7 +112,7 @@ proc len*(f: FieldTable): int =
     result.inc(v.len() + sizeInt8Uint8)
 
 proc shortStringLen*(s: string): int =
-  if s.len > sizeInt8Uint8:
+  if s.len > uint8.high.int:
     raise newException(InvalidShortStringSizeException, "String is too long: " & $s.len)
   result = s.len+sizeInt8Uint8
 

@@ -1,5 +1,5 @@
 import std/[unittest, asyncdispatch]
-import rabbitmq/rabbitmq
+import rabbitmq/[rabbitmq, connection]
 
 suite "RabbitMQ connection":
   setup:
@@ -9,16 +9,12 @@ suite "RabbitMQ connection":
     proc testConnection() {.async} =
       var address = "amqp://test:test@localhost/test".fromURL()
       var connection = newRabbitMQ(address, 1)
-      var rabbit: RabbitMQConn
       try:
         await connection.connect()
-        rabbit = await connection.acquire()
       except RMQConnectionFailed:
         echo "Can't connect to Redis instance"
         fail()
       finally:
-        if not rabbit.isNil:
-          rabbit.release()
         await connection.close()
     waitFor(testConnection())
 #[
