@@ -7,7 +7,7 @@ suite "RabbitMQ connection":
 
   test "Simple connect/disconnect":
     proc testConnection() {.async} =
-      var address = "amqp://test:test@localhost/test".fromURL()
+      var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         await connection.connect()
@@ -15,7 +15,9 @@ suite "RabbitMQ connection":
         echo "Can't connect to Redis instance"
         fail()
       finally:
+        echo "Closing the connection"
         await connection.close()
+        echo "Connection closed"
     waitFor(testConnection())
 #[
   test "Simple connect/disconnect using with statement":
