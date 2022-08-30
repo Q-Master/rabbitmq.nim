@@ -9,7 +9,7 @@ author      = AUTHOR
 requires "nim >= 0.20.00", "https://github.com/yglukhov/iface", "networkutils >= 0.6.1"
 
 task test, "tests":
-  let tests = @["connection"]
+  let tests = @["connection", "channel"]
   for test in tests:
     echo "Running " & test & " test"
     try:

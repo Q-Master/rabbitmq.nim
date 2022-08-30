@@ -63,7 +63,7 @@ proc decode*(_: typedesc[AMQPTx], s: AsyncBufferedSocket, t: uint32): Future[AMQ
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPTx, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_TX_SELECT_SUBMETHOD,
     AMQP_TX_SELECT_OK_SUBMETHOD,

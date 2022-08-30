@@ -74,7 +74,7 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
   let fType = await src.readU8()
   let chNum = await src.readBEU16()
   let fSize = await src.readBEU32()
-  echo "Got Frame: ", fType, " ", chNum," ", fSize
+  #echo "Got Frame: ", fType, " ", chNum," ", fSize
   case fType
   of FRAME_METHOD:
     let meth: AMQPMethod = await src.decodeMethod()

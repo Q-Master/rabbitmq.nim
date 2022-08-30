@@ -56,7 +56,7 @@ proc decode*(_: typedesc[AMQPAccess], s: AsyncBufferedSocket, t: uint32): Future
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPAccess, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_ACCESS_REQUEST_SUBMETHOD:
     await dst.encodeShortString(meth.realm)

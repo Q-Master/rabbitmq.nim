@@ -160,7 +160,7 @@ proc decode*(_: typedesc[AMQPConnection], s: AsyncBufferedSocket, t: uint32): Fu
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_CONNECTION_START_SUBMETHOD:
     await dst.write(meth.versionMajor)

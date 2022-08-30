@@ -47,7 +47,7 @@ proc decode*(_: typedesc[AMQPConfirm], s: AsyncBufferedSocket, t: uint32): Futur
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPConfirm, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_CONFIRM_SELECT_SUBMETHOD:
     await dst.write(cast[uint8](meth.confirmFlags))

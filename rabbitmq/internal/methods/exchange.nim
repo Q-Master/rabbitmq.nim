@@ -151,7 +151,7 @@ proc decode*(_: typedesc[AMQPExchange], s: AsyncBufferedSocket, t: uint32): Futu
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPExchange, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     await dst.writeBE(0.uint16)

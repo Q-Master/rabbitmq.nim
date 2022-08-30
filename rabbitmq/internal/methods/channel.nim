@@ -90,7 +90,7 @@ proc decode*(_: typedesc[AMQPChannel], s: AsyncBufferedSocket, t: uint32): Futur
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 
 proc encode*(meth: AMQPChannel, dst: AsyncBufferedSocket) {.async.} =
-  echo $meth.kind
+  #echo $meth.kind
   case meth.kind:
   of AMQP_CHANNEL_OPEN_SUBMETHOD:
     await dst.encodeShortString(meth.outOfBand)
