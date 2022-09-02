@@ -17,9 +17,9 @@ Class Grammar:
 ]#
 
 import std/[asyncdispatch]
-import ../internal/methods/all
-import ../internal/[exceptions, field, properties, frame]
-import ../connection
+import ./internal/methods/all
+import ./internal/[exceptions, field, properties]
+import ./connection
 import ./queue
 import ./exchange
 
@@ -47,26 +47,6 @@ type
     msg*: Message
     redelivered*: bool
 
-#[
-/**
- * Envelope object
- *
- * \since v0.4.0
- */
-typedef struct amqp_envelope_t_ {
-  amqp_channel_t channel;     /**< channel message was delivered on */
-  amqp_bytes_t consumer_tag;  /**< the consumer tag the message was delivered to
-                               */
-  uint64_t delivery_tag;      /**< the messages delivery tag */
-  amqp_boolean_t redelivered; /**< flag indicating whether this message is being
-                                 redelivered */
-  amqp_bytes_t exchange;      /**< exchange this message was published to */
-  amqp_bytes_t routing_key; /**< the routing key this message was published with
-                             */
-  amqp_message_t message;   /**< the message */
-} amqp_envelope_t;
-]#
-
 proc getConsumerTagId(tag: ConsumerTag): string =
   if tag.isNil:
     result = ""
@@ -78,7 +58,7 @@ proc basicQos*(channel: Channel, prefetchSize=0.uint32, prefetchCount=0.uint16, 
     newBasicQosMethod(
       prefetchSize, prefetchCount, globalQos
     ), 
-    @[BASIC_QOS_OK_METHOD_ID]
+    @[AMQP_BASIC_QOS_OK_METHOD]
   )
 
 proc basicConsume*(
@@ -88,11 +68,12 @@ proc basicConsume*(
   ): Future[ConsumerTag] {.async.} =
   let res = await queue.channel.rpc(
     newBasicConsumeMethod(
-      queue.queueId, consumerTag.getConsumerTagId(),
+      queue.id, consumerTag.getConsumerTagId(),
       noLocal, noAck, exclusive, noWait,
       args
     ), 
-    @[BASIC_CONSUME_OK_METHOD_ID]
+    @[AMQP_BASIC_CONSUME_OK_METHOD],
+    noWait = noWait
   )
   result = ConsumerTag(consumerTagId: res.basicObj.consumerTag, channel: queue.channel, stop: false, stopFuture: newFuture[void]("Consumer stop"))
   #TODO start DELIVER and RETURN callbacks here
@@ -102,10 +83,12 @@ proc basicCancel*(consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {
     newBasicCancelMethod(
       consumerTag.getConsumerTagId(), noWait
     ), 
-    @[BASIC_CANCEL_OK_METHOD_ID]
+    @[AMQP_BASIC_CANCEL_OK_METHOD],
+    noWait = noWait
   )
-  if res.basicObj.consumerTag != consumerTag.consumerTagId:
-    raise newException(AMQPCommandInvalid, "Consumer tag differs")
+  if not res.isNil:
+    if res.basicObj.consumerTag != consumerTag.consumerTagId:
+      raise newException(AMQPCommandInvalid, "Consumer tag differs")
   result = consumerTag
   consumerTag.stop = true
   await consumerTag.stopFuture
@@ -117,7 +100,7 @@ proc basicPublish*(exchange: Exchange, routingKey: string, data: openArray[byte]
 proc consumer(consumerTag: ConsumerTag) {.async.} =
   while consumerTag.stop == false:
     let frame = await consumerTag.channel.waitOrGetFrame()
-    if frame.frameType == ftMethod and frame.meth.methodId in [BASIC_DELIVER_METHOD_ID, BASIC_RETURN_METHOD_ID]:
+    if frame.frameType == ftMethod and frame.meth.methodId in [AMQP_BASIC_DELIVER_METHOD, AMQP_BASIC_RETURN_METHOD]:
       var envelope = Envelope(consumerTag: consumerTag)
       case frame.meth.methodId
       of BASIC_DELIVER_METHOD_ID:

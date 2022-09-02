@@ -6,10 +6,10 @@ license     = "MIT"
 author      = AUTHOR
 
 # Dependencies
-requires "nim >= 0.20.00", "https://github.com/yglukhov/iface", "networkutils >= 0.6.1"
+requires "nim >= 0.20.00", "networkutils >= 0.6.1"
 
 task test, "tests":
-  let tests = @["connection", "channel"]
+  let tests = @["connection", "channel", "queue", "exchange"]
   for test in tests:
     echo "Running " & test & " test"
     try:

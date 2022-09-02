@@ -164,7 +164,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.purge.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
   of QUEUE_PURGE_OK_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD)
-    result.declareOk.messageCount = await s.readBEU32()
+    result.purgeOkDeleteOk.messageCount = await s.readBEU32()
   of QUEUE_DELETE_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_DELETE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
@@ -172,7 +172,7 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.del.flags = cast[AMQPQueueDeleteBits](await s.readU8())
   of QUEUE_DELETE_OK_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD)
-    result.declareOk.messageCount = await s.readBEU32()
+    result.purgeOkDeleteOk.messageCount = await s.readBEU32()
   of QUEUE_UNBIND_METHOD_ID:
     result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()

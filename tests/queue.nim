@@ -1,11 +1,11 @@
-import std/[unittest, asyncdispatch]
-import rabbitmq/[rabbitmq, connection]
+import std/[unittest, asyncdispatch, asyncfutures, os]
+import rabbitmq/[rabbitmq, connection, queue]
 
-suite "RabbitMQ channel":
+suite "RabbitMQ queue":
   setup:
     discard
 
-  test "Channel create/close":
+  test "Queue declare/delete":
     proc testChannelCreation() {.async} =
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
@@ -13,7 +13,12 @@ suite "RabbitMQ channel":
         await connection.connect()
         checkpoint "Allocating channel"
         let chan = await connection.openChannel()
-        check chan.channelId == 1
+        checkpoint "Creating queue"
+        let q = await chan.queueDeclare("testQueue")
+        check q.id == "testQueue"
+        checkpoint "Deleting the queue"
+        let msgCount = await q.delete()
+        check msgCount == 0
         checkpoint "Closing the channel"
         await chan.close()
       except RMQConnectionFailed:
@@ -23,3 +28,4 @@ suite "RabbitMQ channel":
         checkpoint "Closing the connection"
         await connection.close()
     waitFor(testChannelCreation())
+

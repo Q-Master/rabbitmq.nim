@@ -7,19 +7,21 @@ Class Grammar:
 ]#
 
 import std/[asyncdispatch]
-import ../internal/methods/all
-import ../internal/[exceptions, field]
-import ../connection
+import ./internal/methods/all
+import ./internal/[exceptions, field]
+import ./connection
+
+export AMQPExchangeType
 
 type
   Exchange* = ref ExchangeObj
   ExchangeObj* = object of RootObj
-    exchangeId*: string
+    id: string
     channel: Channel
 
-proc newExchange*(exchangeId: string, channel: Channel): Exchange =
+proc newExchange*(id: string, channel: Channel): Exchange =
   result.new
-  result.exchangeId = exchangeId
+  result.id = id
   result.channel = channel
 
 proc exchangeDeclare*(
@@ -27,48 +29,63 @@ proc exchangeDeclare*(
     passive = false, durable = false, autoDelete = false, internal = false, noWait = false,
     args: FieldTable = nil
   ): Future[Exchange] {.async.} =
+  var args = args
+  if args.isNil:
+    args = newFieldTable()
   let res {.used.} = await channel.rpc(
     newExchangeDeclareMethod(
       exchange, exchangeType, passive, durable, autoDelete, internal, noWait, args
     ), 
-    @[EXCHANGE_DECLARE_OK_METHOD_ID]
+    @[AMQP_EXCHANGE_DECLARE_OK_METHOD],
+    noWait = noWait
   )
   result = newExchange(exchange, channel)
 
-proc exchangeDelete*(exchange: Exchange, ifUnused = false, noWait = false) {.async.} =
+proc delete*(exchange: Exchange, ifUnused = false, noWait = false) {.async.} =
   let res {.used.} = await exchange.channel.rpc(
     newExchangeDeleteMethod(
-      exchange.exchangeId, ifUnused, noWait
+      exchange.id, ifUnused, noWait
     ), 
-    @[EXCHANGE_DELETE_OK_METHOD_ID]
+    @[AMQP_EXCHANGE_DELETE_OK_METHOD],
+    noWait = noWait
   )
 
 proc exchangeBind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
+  var args = args
+  if args.isNil:
+    args = newFieldTable()
   try:
     let res {.used.} = await src.channel.rpc(
       newExchangeBindMethod(
-        destination, src.exchangeId, routingKey, noWait, args
+        destination, src.id, routingKey, noWait, args
       ), 
-      @[EXCHANGE_BIND_OK_METHOD_ID]
+      @[AMQP_EXCHANGE_BIND_OK_METHOD],
+      noWait = noWait
     )
     result = true
   except AMQPNotFound:
     result = false
 
 proc exchangeBind*(src, destination : Exchange, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] =
-  result = src.exchangeBind(destination.exchangeId, routingKey, noWait, args)
+  result = src.exchangeBind(destination.id, routingKey, noWait, args)
 
-proc exchangeUnbind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
+proc unbind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
+  var args = args
+  if args.isNil:
+    args = newFieldTable()
   try:
     let res {.used.} = await src.channel.rpc(
       newExchangeUnbindMethod(
-        destination, src.exchangeId, routingKey, noWait, args
+        destination, src.id, routingKey, noWait, args
       ), 
-      @[EXCHANGE_UNBIND_OK_METHOD_ID]
+      @[AMQP_EXCHANGE_UNBIND_OK_METHOD],
+      noWait = noWait
     )
     result = true
   except AMQPNotFound:
     result = false
 
-proc exchangeUnbind*(src, destination : Exchange, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] =
-  result = src.exchangeUnbind(destination.exchangeId, routingKey, noWait, args)
+proc unbind*(src, destination : Exchange, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] =
+  result = src.unbind(destination.id, routingKey, noWait, args)
+
+proc id*(exchange: Exchange): string = exchange.id

@@ -337,7 +337,8 @@ proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
 
 #----------------------------------------------------------------------------------#
 
-proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.}
+proc encodeField(s: AsyncBufferedSocket, data: Field) {.async, gcsafe.}
+
 proc encodeArray*(s: AsyncBufferedSocket, arr: Field) {.async.} =
   await s.write(arr.len().uint32 - sizeInt32Uint32.uint32)
   for elem in arr.arrayVal:
@@ -359,7 +360,7 @@ proc encodeTable*(s: AsyncBufferedSocket, table: FieldTable) {.async.} =
     await s.encodeShortString(k)
     await s.encodeField(v)
 
-proc encodeField(s: AsyncBufferedSocket, data: Field) {.async.} =
+proc encodeField(s: AsyncBufferedSocket, data: Field) {.async, gcsafe.} =
   case data.kind
   of dtBool:
     await s.write('t'.uint8)
