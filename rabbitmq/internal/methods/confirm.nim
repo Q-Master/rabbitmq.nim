@@ -6,6 +6,8 @@ const CONFIRM_METHODS* = 0x0055.uint16
 const CONFIRM_SELECT_METHOD_ID* = 0x0055000A.uint32
 const CONFIRM_SELECT_OK_METHOD_ID* = 0x0055000B.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPConfirmKind = enum
     AMQP_CONFIRM_NONE = 0

@@ -10,6 +10,8 @@ const TX_COMMIT_OK_METHOD_ID* = 0x005A0015.uint32
 const TX_ROLLBACK_METHOD_ID* = 0x005A001E.uint32
 const TX_ROLLBACK_OK_METHOD_ID* = 0x005A001F.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPTxKind = enum
     AMQP_TX_NONE = 0

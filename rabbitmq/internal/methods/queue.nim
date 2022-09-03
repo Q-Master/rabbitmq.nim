@@ -15,6 +15,8 @@ const QUEUE_DELETE_OK_METHOD_ID* = 0x00320029.uint32
 const QUEUE_UNBIND_METHOD_ID* = 0x00320032.uint32
 const QUEUE_UNBIND_OK_METHOD_ID* = 0x00320033.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPQueueKind = enum
     AMQP_QUEUE_NONE = 0

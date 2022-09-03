@@ -7,6 +7,8 @@ const ACCESS_METHODS* = 0x001E.uint16
 const ACCESS_REQUEST_METHOD_ID* = 0x001E000A.uint32
 const ACCESS_REQUEST_OK_METHOD_ID* = 0x001E000B.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPAccessKind = enum
     AMQP_ACCESS_NONE = 0

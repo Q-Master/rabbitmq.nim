@@ -17,6 +17,8 @@ const CONNECTION_CLOSE_OK_METHOD_ID* = 0x000A0033.uint32
 const CONNECTION_BLOCKED_METHOD_ID* = 0x000A003C.uint32
 const CONNECTION_UNBLOCKED_METHOD_ID* = 0x000A003D.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPConnectionKind = enum
     AMQP_CONNECTION_NONE = 0
@@ -105,7 +107,7 @@ proc len*(meth: AMQPConnection): int =
   of AMQP_CONNECTION_OPEN_OK_SUBMETHOD:
     result.inc(meth.knownHosts.shortStringLen)
   of AMQP_CONNECTION_BLOCKED_SUBMETHOD:
-    result.inc(meth.capabilities.shortStringLen)
+    result.inc(meth.reason.shortStringLen)
   else:
     raise newException(InvalidFrameMethodException, "Wrong MethodID")
 

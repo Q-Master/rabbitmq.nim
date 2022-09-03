@@ -13,6 +13,8 @@ const EXCHANGE_BIND_OK_METHOD_ID* = 0x0028001F.uint32
 const EXCHANGE_UNBIND_METHOD_ID* = 0x00280028.uint32
 const EXCHANGE_UNBIND_OK_METHOD_ID* = 0x00280033.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPExchangeKind = enum
     AMQP_EXCHANGE_NONE = 0

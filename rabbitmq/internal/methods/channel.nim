@@ -11,6 +11,7 @@ const CHANNEL_FLOW_OK_METHOD_ID* = 0x00140015.uint32
 const CHANNEL_CLOSE_METHOD_ID* = 0x00140028.uint32
 const CHANNEL_CLOSE_OK_METHOD_ID* = 0x00140029.uint32
 
+{. push warning[ProveField]:on .}
 
 type
   AMQPChannelKind = enum

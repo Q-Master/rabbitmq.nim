@@ -23,6 +23,8 @@ const BASIC_RECOVER_METHOD_ID* = 0x003C006E.uint32
 const BASIC_RECOVER_OK_METHOD_ID* = 0x003C006F.uint32
 const BASIC_NACK_METHOD_ID* = 0x003C0078.uint32
 
+{. push warning[ProveField]:on .}
+
 type
   AMQPBasicKind = enum
     AMQP_BASIC_NONE = 0
@@ -197,12 +199,12 @@ proc len*(meth: AMQPBasic): int =
     result.inc(sizeInt8Uint8)
     result.inc(meth.consume.args.len)
   of AMQP_BASIC_CONSUME_OK_SUBMETHOD:
-    result.inc(meth.consume.consumerTag.shortStringLen)
+    result.inc(meth.consumeCancelOk.consumerTag.shortStringLen)
   of AMQP_BASIC_CANCEL_SUBMETHOD:
     result.inc(meth.cancel.consumerTag.shortStringLen)
     result.inc(sizeInt8Uint8)
   of AMQP_BASIC_CANCEL_OK_SUBMETHOD:
-    result.inc(meth.cancel.consumerTag.shortStringLen)
+    result.inc(meth.consumeCancelOk.consumerTag.shortStringLen)
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result.inc(sizeInt16Uint16)
     result.inc(meth.publish.exchange.shortStringLen)
