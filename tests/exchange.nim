@@ -1,4 +1,4 @@
-import std/[unittest, asyncdispatch, asyncfutures]
+import std/[unittest, asyncdispatch]
 import rabbitmq/[rabbitmq, connection, exchange]
 
 suite "RabbitMQ exchange":
