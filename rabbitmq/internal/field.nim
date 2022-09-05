@@ -119,7 +119,6 @@ proc shortStringLen*(s: string): int =
 proc stringLen*(s: string): int =
   result = s.len+sizeInt32Uint32
 
-
 proc `$`*(f: Field): string =
   case f.kind
   of dtBool:
@@ -247,11 +246,11 @@ proc decodeArray*(s: AsyncBufferedSocket): Future[seq[Field]] {.async.} =
   result = arr
 
 proc decodeShortString*(s: AsyncBufferedSocket): Future[string] {.async.} =
-  let size = await s.read8()
+  let size = await s.readU8()
   if size == 0:
     result = ""
   else:
-    result = await s.readString(size)
+    result = await s.readString(size.int)
 
 proc decodeString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.readBEU32()

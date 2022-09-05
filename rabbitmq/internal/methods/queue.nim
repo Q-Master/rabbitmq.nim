@@ -115,6 +115,7 @@ proc len*(meth: AMQPQueue): int =
     result.inc(meth.qBind.queue.shortStringLen())
     result.inc(meth.qBind.exchange.shortStringLen())
     result.inc(meth.qBind.routingKey.shortStringLen())
+    result.inc(meth.qBind.args.len())
     result.inc(sizeInt8Uint8)
   of AMQP_QUEUE_PURGE_SUBMETHOD:
     result.inc(sizeInt16Uint16)
@@ -131,6 +132,7 @@ proc len*(meth: AMQPQueue): int =
     result.inc(meth.unbind.queue.shortStringLen())
     result.inc(meth.unbind.exchange.shortStringLen())
     result.inc(meth.unbind.routingKey.shortStringLen())
+    result.inc(meth.unbind.args.len())
   of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
     result.inc(0)
   else:
@@ -318,7 +320,7 @@ proc newQueueDeleteOk*(messageCount: uint32): AMQPQueue =
 proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_UNBIND_SUBMETHOD, 
-    unbind: AMQPQueueBindObj(
+    unbind: AMQPQueueUnBindObj(
       queue: queue,
       exchange: exchange,
       routingKey: routingKey,

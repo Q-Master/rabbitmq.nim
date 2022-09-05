@@ -1,4 +1,4 @@
-import std/[asyncdispatch]
+import std/[asyncdispatch, strutils]
 import pkg/networkutils/buffered_socket
 import ./spec
 import ./exceptions
@@ -114,6 +114,8 @@ proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
       await dest.writeBE(f.bodySize)
     of ftMethod:
       await dest.encodeMethod(f.meth)
+      #echo "METHOD: ", f.meth.kind, ", ", f.meth.methodId.toHex
+      #echo "SIZE: ", f.meth.len()
     of ftBody:
       await dest.writeString(f.fragment)
     else:

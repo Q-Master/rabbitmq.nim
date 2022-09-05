@@ -223,6 +223,7 @@ proc connect(conn: RabbitMQConn, adr: RMQAddress) {.async.} =
       await needLogin(conn, adr)
       conn.connected = true
       conn.consumer = conn.consume
+      asyncCheck conn.consumer
     else:
       conn.connected = false
       raise newException(RMQConnectionFailed, "Timeout connecting to RabbitMQ")
@@ -384,6 +385,9 @@ proc consume(rmq: RabbitMQConn) {.async.} =
     if frame.channelNum == 0:
       case frame.frameType
       of ftMethod:
+        if frame.meth.methodId == CONNECTION_CLOSE_METHOD_ID:
+          echo "CLOSING: ", frame.meth.connObj.replyText
+          await rmq.disconnect(fromClose=true)
         if rmq.retFuture.isNil or rmq.retFuture.finished:
           raise newAMQPException(AMQPUnexpectedMethod, "Unexpected method", frame.meth.methodId.int)
         else:
@@ -419,8 +423,9 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
   else:
     ch.resultFuture.fail(newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected"))
 
-
 proc onClose(ch: Channel) {.async.} =
   #TODO need to cancel all the consumers and stop them
   echo "Channel " & $ch.channelId & " closing"
+  if not ch.resultFuture.isNil and not ch.resultFuture.finished:
+    ch.resultFuture.fail(newAMQPException(AMQPInternalError, "Connection closing unexpectedly", 503))
   discard

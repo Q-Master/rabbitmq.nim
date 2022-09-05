@@ -49,10 +49,13 @@ proc delete*(queue: Queue, ifUnused = false, ifEmpty = false, noWait = false): F
   )
   result = if noWait: 0.uint32 else: res.queueObj.messageCount
 
-proc queueBind*(queue: Queue, exchange: Exchange, routingKey: string, noWait = false, args: FieldTable = nil): Future[bool] {.async.} =
+proc queueBind*(queue: Queue, exchange: Exchange, routingKey: string = "", noWait = false, args: FieldTable = nil): Future[bool] {.async.} =
   var args = args
   if args.isNil:
     args = newFieldTable()
+  var routingKey = routingKey
+  if routingKey == "":
+    routingKey = queue.id
   try:
     let res {.used.} = await queue.channel.rpc(
       newQueueBindMethod(
@@ -65,10 +68,13 @@ proc queueBind*(queue: Queue, exchange: Exchange, routingKey: string, noWait = f
   except AMQPNotFound:
     result = false
 
-proc unbind*(queue: Queue, exchange: Exchange, routingKey: string, args: FieldTable = nil): Future[bool] {.async.} =
+proc unbind*(queue: Queue, exchange: Exchange, routingKey: string = "", args: FieldTable = nil): Future[bool] {.async.} =
   var args = args
   if args.isNil:
     args = newFieldTable()
+  var routingKey = routingKey
+  if routingKey == "":
+    routingKey = queue.id
   try:
     let res {.used.} = await queue.channel.rpc(
       newQueueUnbindMethod(
