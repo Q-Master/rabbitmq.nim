@@ -22,22 +22,16 @@ import ./internal/[exceptions, field, properties]
 import ./connection
 import ./queue
 import ./exchange
+import ./message
 
 type
   ConsumerTag* = ref ConsumerTagObj
   ConsumerTagObj* = object of RootObj
-    consumerTagId*: string
+    id: string
     channel: Channel
     onDeliver: proc (msg: Message): Future[void]
     onReturn: proc (msg: Message): Future[void]
-    stop: bool
-    stopFuture: Future[void]
 
-  Message* = ref MessageObj
-  MessageObj* = object of RootObj
-    props*: Properties
-    data*: seq[byte]
-  
   Envelope* = ref EnvelopeObj
   EnvelopeObj* = object of RootObj
     consumerTag*: ConsumerTag
@@ -47,13 +41,18 @@ type
     msg*: Message
     redelivered*: bool
 
-proc getConsumerTagId(tag: ConsumerTag): string =
+proc newConsumerTag*(id: string, channel: Channel): ConsumerTag =
+  result.new
+  result.id = id
+  result.channel = channel
+
+proc consumerTagId(tag: ConsumerTag): string =
   if tag.isNil:
     result = ""
   else:
-    result = tag.consumerTagId
+    result = tag.id
 
-proc basicQos*(channel: Channel, prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false) {.async.} =
+proc qos*(channel: Channel, prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false) {.async.} =
   let res {.used.} = await channel.rpc(
     newBasicQosMethod(
       prefetchSize, prefetchCount, globalQos
@@ -61,27 +60,26 @@ proc basicQos*(channel: Channel, prefetchSize=0.uint32, prefetchCount=0.uint16, 
     @[AMQP_BASIC_QOS_OK_METHOD]
   )
 
-proc basicConsume*(
+proc consume*(
   queue: Queue, consumerTag: ConsumerTag = nil, 
   noLocal=false, noAck=false, exclusive=false, noWait=false, 
   args: FieldTable=nil
   ): Future[ConsumerTag] {.async.} =
   let res = await queue.channel.rpc(
     newBasicConsumeMethod(
-      queue.id, consumerTag.getConsumerTagId(),
+      queue.id, consumerTag.consumerTagId,
       noLocal, noAck, exclusive, noWait,
       args
     ), 
     @[AMQP_BASIC_CONSUME_OK_METHOD],
     noWait = noWait
   )
-  result = ConsumerTag(consumerTagId: res.basicObj.consumerTag, channel: queue.channel, stop: false, stopFuture: newFuture[void]("Consumer stop"))
-  #TODO start DELIVER and RETURN callbacks here
+  result = newConsumerTag(res.basicObj.consumerTag, queue.channel)
 
-proc basicCancel*(consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {.async.} =
+proc cancel*(consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {.async.} =
   let res = await consumerTag.channel.rpc(
     newBasicCancelMethod(
-      consumerTag.getConsumerTagId(), noWait
+      consumerTag.consumerTagId, noWait
     ), 
     @[AMQP_BASIC_CANCEL_OK_METHOD],
     noWait = noWait
@@ -90,13 +88,18 @@ proc basicCancel*(consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {
     if res.basicObj.consumerTag != consumerTag.consumerTagId:
       raise newException(AMQPCommandInvalid, "Consumer tag differs")
   result = consumerTag
-  consumerTag.stop = true
-  await consumerTag.stopFuture
-  #TODO stop DELIVER and RETURN callbacks here
 
-proc basicPublish*(exchange: Exchange, routingKey: string, data: openArray[byte], mandatory=false, immediate=false) {.async.} =
-  discard
+proc publish*(
+  exchange: Exchange, routingKey: string, msg: Message, 
+  mandatory=false, immediate=false
+  ) {.async.} =
+  let res {.used.} = await exchange.channel.rpc(
+    newBasicPublishMethod(exchange.id, routingKey, mandatory, immediate), 
+    @[],
+    payload = msg
+  )
 
+#[
 proc consumer(consumerTag: ConsumerTag) {.async.} =
   while consumerTag.stop == false:
     let frame = await consumerTag.channel.waitOrGetFrame()
@@ -112,7 +115,7 @@ proc consumer(consumerTag: ConsumerTag) {.async.} =
 
       else:
         discard
-
+]#
 
 
 proc queue*(consumerTag: ConsumerTag): Queue = consumerTag.queue

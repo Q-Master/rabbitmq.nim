@@ -71,6 +71,12 @@ type
     else:
       discard
 
+proc newBasicProperties*(): Properties =
+  result = Properties(
+    kind: BASIC_PROPERTIES,
+    basicFlags: cast[BasicPropertiesFlags](0.uint32)
+  )
+
 proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties] {.async.} =
   if id notin ALL_PROPERTIES_IDS:
     raise newException(AMQPFrameError, "Properties id(" & $id & ") is not correct")
@@ -119,7 +125,7 @@ proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties]
   else:
     discard
 
-proc encodeProperties*(p: Properties, dst: AsyncBufferedSocket): Future[Properties] {.async.} =
+proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties): Future[Properties] {.async.} =
   var flags: uint32 = (if p.kind == BASIC_PROPERTIES: cast[uint32](p.basicFlags) else: p.flags)
   while true:
     let remainder:uint32 = flags shr 16

@@ -89,3 +89,4 @@ proc unbind*(src, destination : Exchange, routingKey: string, noWait=false, args
   result = src.unbind(destination.id, routingKey, noWait, args)
 
 proc id*(exchange: Exchange): string = exchange.id
+proc channel*(exchange: Exchange): Channel = exchange.channel

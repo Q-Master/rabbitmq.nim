@@ -112,6 +112,7 @@ proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
       await dest.writeBE(f.props.kind.uint16)
       await dest.writeBE(0.uint16)
       await dest.writeBE(f.bodySize)
+      await dest.encodeProperties(f.props)
     of ftMethod:
       await dest.encodeMethod(f.meth)
       #echo "METHOD: ", f.meth.kind, ", ", f.meth.methodId.toHex

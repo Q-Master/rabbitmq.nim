@@ -1,7 +1,8 @@
 import std/[asyncdispatch, times, tables, random, net]
 import pkg/networkutils/buffered_socket
-import internal/[address, frame, field, exceptions, spec, auth]
-import internal/methods/all
+import ./internal/[address, frame, field, exceptions, spec, auth, properties]
+import ./internal/methods/all
+import ./message
 
 export address
 
@@ -50,7 +51,7 @@ proc closeConnection(conn: RabbitMQConn) {.async.}
 proc closeOkConnection(conn: RabbitMQConn) {.async.}
 proc nextChannel(conn: RabbitMQConn): uint16
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.}
-proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0): Future[void] {.gcsafe.} 
+proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, payload: Message = nil) {.async, gcsafe.}
 proc waitMethods(rmq: RabbitMQConn, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc consume(rmq: RabbitMQConn) {.async.}
@@ -112,7 +113,7 @@ proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
   result.expectedMethods = @[]
   result.resultFuture = nil
 
-proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], noWait: bool = false): Future[AMQPMethod] =
+proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[AMQPMethod] =
   let wasOpened = ch.opened
   var retFuture = newFuture[AMQPMethod]("Resulting future")
   var sendFuture = newFuture[void]("Send data")
@@ -129,17 +130,18 @@ proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods],
     if (ch.resultFuture.isNil or ch.resultFuture.finished) and success:
       ch.resultFuture = retFuture
       ch.expectedMethods = expectedMethods
-      sendFuture = ch.connection.sendMethod(meth, ch.channelId)
+      sendFuture = ch.connection.sendMethod(meth, ch.channelId, payload)
       sendFuture.callback=
         proc() =
           if sendFuture.failed:
             retFuture.fail(sendFuture.readError())
+          elif noWait or expectedMethods.len == 0:
+            ch.expectedMethods = @[]
+            retFuture.complete(nil)
     else:
       var timeoutFuture = retFuture.withTimeout(ch.connection.timeout)
       timeoutFuture.callback = busyWaiter
   busyWaiter()
-  if noWait:
-    retFuture.complete(nil)
   return retFuture
 
 proc openChannel*(pool: RabbitMQ): Future[Channel] {.async.} =
@@ -287,9 +289,28 @@ proc waitMethods(rmq: RabbitMQConn, expectedMethods: sink seq[AMQPMethods]): Fut
 proc waitMethod(rmq: RabbitMQConn, expectedMethod: AMQPMethods): Future[AMQPMethod] =
   result = rmq.waitMethods(@[expectedMethod])
 
-proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0) {.async.} =
+proc sendHeader(conn: RabbitMQConn, channel: uint16 = 0, bodySize: uint64, props: Properties) {.async.} =
+  let frame = newHeaderFrame(channel, bodySize, props)
+  await conn.sock.encodeFrame(frame)
+
+proc sendBody(conn: RabbitMQConn, channel: uint16 = 0, data: sink openArray[byte]) {.async.} =
+  var bLen = data.len
+  var start = 0
+  while bLen > 0:
+    let chunkSize = if bLen > conn.frameMax.int: conn.frameMax.int else: bLen
+    let body = newStringOfCap(chunkSize)
+    copyMem(body[0].unsafeAddr, data[start].addr, chunkSize)
+    let frame = newBodyFrame(channel, body)
+    await conn.sock.encodeFrame(frame)
+    start.inc(chunkSize)
+    bLen.dec(chunkSize)
+
+proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, payload: Message = nil) {.async.} =
   let frame = newMethodFrame(channel, meth)
   await conn.sock.encodeFrame(frame)
+  if not payload.isNil:
+    await conn.sendHeader(channel, payload.data.len.uint64, payload.props)
+    await conn.sendBody(channel, payload.data)
 
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   let header = newProtocolHeaderFrame(PROTOCOL_VERSION[0], PROTOCOL_VERSION[1], PROTOCOL_VERSION[2])
@@ -407,13 +428,18 @@ proc consume(rmq: RabbitMQConn) {.async.} =
 proc onFrame(ch: Channel, frame: Frame) {.async.} =
   case frame.frameType
   of ftMethod:
-    if frame.meth.methodId.idToAMQPMethod notin ch.expectedMethods:
-      ch.resultFuture.fail(newException(AMQPUnexpectedMethod, "Method " & $frame.meth.methodId & " is unexpected"))
+    let methEnum = frame.meth.methodId.idToAMQPMethod
+    if methEnum in [AMQP_BASIC_DELIVER_METHOD, AMQP_BASIC_RETURN_METHOD, AMQP_BASIC_ACK_METHOD, AMQP_BASIC_NACK_METHOD]:
+      #TODO implement consuming
+      discard
+    if ch.resultFuture.isNil or ch.resultFuture.finished:
+      discard
+    elif ch.expectedMethods.len == 0:
+      ch.resultFuture.complete(nil)
+    elif methEnum notin ch.expectedMethods:
+      ch.resultFuture.fail(newException(AMQPUnexpectedMethod, "Method " & $methEnum & " is unexpected"))
     else:
-      if ch.resultFuture.isNil or ch.resultFuture.finished:
-        discard
-      else:
-        ch.resultFuture.complete(frame.meth)
+      ch.resultFuture.complete(frame.meth)
   of ftHeader:
     echo "HEADER"
     discard
