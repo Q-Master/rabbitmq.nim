@@ -77,6 +77,7 @@ proc newBasicProperties*(): Properties =
     basicFlags: cast[BasicPropertiesFlags](0.uint32)
   )
 
+{.warning[HoleEnumConv]:off.}
 proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties] {.async.} =
   if id notin ALL_PROPERTIES_IDS:
     raise newException(AMQPFrameError, "Properties id(" & $id & ") is not correct")
@@ -124,6 +125,7 @@ proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties]
       result.clusterId = await src.decodeShortString()
   else:
     discard
+{.warning[HoleEnumConv]:on.}
 
 proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties) {.async.} =
   var flags: uint32 = (if p.kind == BASIC_PROPERTIES: cast[uint32](p.basicFlags) else: p.flags)

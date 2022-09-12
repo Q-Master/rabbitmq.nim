@@ -44,28 +44,32 @@ proc newMethodFrame*(channelNum: uint16, meth: AMQPMethod): Frame =
   result.size = meth.len.uint32
 
 proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): Frame =
-  result.new
-  result.frameType = ftHeader
-  result.channelNum = channelNum
-  result.bodySize = bodySize
-  result.props = props
+  result = Frame(
+    frameType: ftHeader,
+    channelNum: channelNum,
+    bodySize: bodySize,
+    props: props
+  )
 
 proc newBodyFrame*(channelNum: uint16, fragment: seq[byte]): Frame =
-  result.new
-  result.frameType = ftBody
-  result.channelNum = channelNum
-  result.fragment = fragment
+  result = Frame(
+    frameType: ftBody,
+    channelNum: channelNum,
+    fragment: fragment
+  )
 
 proc newBodyFrame*(channelNum: uint16, size: int): Frame =
-  result.new
-  result.frameType = ftBody
-  result.channelNum = channelNum
+  result = Frame(
+    frameType: ftBody,
+    channelNum: channelNum
+  )
   result.fragment.setLen(size)
 
 proc newHeartBeatFrame*(channelNum: uint16): Frame =
-  result.new
-  result.frameType = ftHeartBeat
-  result.channelNum = channelNum
+  result = Frame(
+    frameType: ftHeartBeat,
+    channelNum: channelNum
+  )
 
 proc newProtocolHeaderFrame*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], revision = PROTOCOL_VERSION[2] ): Frame =
   result = Frame(frameType: ftProtocolHeader, channelNum: 0, major: major, minor: minor, revision: revision)

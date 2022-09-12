@@ -124,9 +124,11 @@ type
     else:
       discard
 
+{.warning[HoleEnumConv]:off.}
 proc newMethod*(id: uint32): AMQPMethod =
   let (idHi, _) = uint32touints16(id)
   result = AMQPMethod(kind: AMQPMetodKind(idHi), methodId: id)
+{.warning[HoleEnumConv]:on.}
 
 proc len*(meth: AMQPMethod): int = 
   result = sizeInt32Uint32
@@ -197,7 +199,9 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
 
+{.warning[HoleEnumConv]:off.}
 proc idToAMQPMethod*(meth: AMQPMethod): AMQPMethods = AMQPMethods(meth.methodId)
+{.warning[HoleEnumConv]:on.}
 
 #--
 
