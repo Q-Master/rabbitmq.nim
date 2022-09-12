@@ -37,7 +37,7 @@ proc queueDeclare*(
   if noWait:
     result = Queue(id: queue, channel: channel)
   else:
-    result = Queue(id: res.queueObj.queue, channel: channel)
+    result = Queue(id: res.meth.queueObj.queue, channel: channel)
 
 proc delete*(queue: Queue, ifUnused = false, ifEmpty = false, noWait = false): Future[uint32] {.async.} =
   let res = await queue.channel.rpc(
@@ -47,7 +47,7 @@ proc delete*(queue: Queue, ifUnused = false, ifEmpty = false, noWait = false): F
     @[AMQP_QUEUE_DELETE_OK_METHOD],
     noWait = noWait
   )
-  result = if noWait: 0.uint32 else: res.queueObj.messageCount
+  result = if noWait: 0.uint32 else: res.meth.queueObj.messageCount
 
 proc queueBind*(queue: Queue, exchange: Exchange, routingKey: string = "", noWait = false, args: FieldTable = nil): Future[bool] {.async.} =
   var args = args
@@ -94,7 +94,7 @@ proc purge*(queue: Queue, noWait = false): Future[uint32] {.async.} =
       @[AMQP_QUEUE_PURGE_OK_METHOD],
       noWait = noWait
     )
-  result = if noWait: 0.uint32 else: res.queueObj.messageCount
+  result = if noWait: 0.uint32 else: res.meth.queueObj.messageCount
 
 proc channel*(queue: Queue): Channel = queue.channel
 proc id*(queue: Queue): string = queue.id

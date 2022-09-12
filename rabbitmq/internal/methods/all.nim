@@ -197,7 +197,7 @@ proc encodeMethod*(dst: AsyncBufferedSocket, meth: AMQPMethod) {.async.} =
     raise newException(InvalidFrameMethodException, NO_SUCH_METHOD_STR)
   #await dst.flush()
 
-proc idToAMQPMethod*(id: uint32): AMQPMethods = AMQPMethods(id)
+proc idToAMQPMethod*(meth: AMQPMethod): AMQPMethods = AMQPMethods(meth.methodId)
 
 #--
 

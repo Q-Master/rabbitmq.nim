@@ -3,6 +3,7 @@ import pkg/networkutils/buffered_socket
 import ./internal/[address, frame, field, exceptions, spec, auth, properties]
 import ./internal/methods/all
 import ./message
+import ./consumertag
 
 export address
 
@@ -39,7 +40,15 @@ type
     channelId*: uint16
     opened: bool
     expectedMethods: seq[AMQPMethods]
-    resultFuture: Future[AMQPMethod]
+    resultFuture: FutureVar[Payload]
+    dataFrame: Payload
+    consumers: Table[string, ConsumerTag]
+    onReturn: proc(msg: Message): Future[void]
+  
+  Payload* = ref PayloadObj
+  PayloadObj* = object of RootObj
+    meth*: AMQPMethod
+    msg*: Message
 
 proc acquire(pool: RabbitMQ): Future[RabbitMQConn] {.async.}
 proc release(conn: RabbitMQConn)
@@ -57,6 +66,7 @@ proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AM
 proc consume(rmq: RabbitMQConn) {.async.}
 proc onClose(ch: Channel) {.async.}
 proc onFrame(ch: Channel, frame: Frame) {.async.}
+proc onDeliverReturn(ch: Channel) {.async.}
 
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
@@ -92,6 +102,11 @@ proc close*(pool: RabbitMQ) {.async.}=
         await s.disconnect()
     await sleepAsync(200)
 
+# --- Payload
+
+proc newPayload*(meth: AMQPMethod, msg: Message): Payload =
+  result = Payload(meth: meth, msg: msg)
+
 # ---  Channel
 
 #[
@@ -106,16 +121,19 @@ Class Grammar:
 ]#
 
 proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
-  result.new
-  result.connection = connection
-  result.channelId = channelId
-  result.opened = false
-  result.expectedMethods = @[]
-  result.resultFuture = nil
+  result = Channel(
+    connection: connection,
+    channelId: channelId,
+    opened: false,
+    expectedMethods: @[],
+    resultFuture: newFutureVar[Payload]("Resulting future"),
+    dataFrame: nil
+  )
+  result.resultFuture.complete() # needed to RPC to work at first time. dirty hack because of non-nullable futurevar
 
-proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[AMQPMethod] =
+proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[Payload] =
   let wasOpened = ch.opened
-  var retFuture = newFuture[AMQPMethod]("Resulting future")
+  let retFuture = Future[Payload](ch.resultFuture)
   var sendFuture = newFuture[void]("Send data")
   proc busyWaiter(fut: Future[bool] = nil) {.gcsafe.} =
     var success: bool = true
@@ -127,8 +145,8 @@ proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods],
         success = fut.read
     if not ch.opened and wasOpened:
       retFuture.fail(newAMQPException(AMQPChannelClosed, "Channel closed unexpectedly", 200))
-    if (ch.resultFuture.isNil or ch.resultFuture.finished) and success:
-      ch.resultFuture = retFuture
+    if ch.resultFuture.finished and success:
+      ch.resultFuture.clean()
       ch.expectedMethods = expectedMethods
       sendFuture = ch.connection.sendMethod(meth, ch.channelId, payload)
       sendFuture.callback=
@@ -137,7 +155,7 @@ proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods],
             retFuture.fail(sendFuture.readError())
           elif noWait or expectedMethods.len == 0:
             ch.expectedMethods = @[]
-            retFuture.complete(nil)
+            ch.resultFuture.complete(nil)
     else:
       var timeoutFuture = retFuture.withTimeout(ch.connection.timeout)
       timeoutFuture.callback = busyWaiter
@@ -168,6 +186,15 @@ proc close*(channel: Channel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
 
 proc flow*(channel: Channel, active: bool) {.async.} =
   let res {.used.} = await channel.rpc(newChannelFlowMethod(active), @[AMQP_CHANNEL_FLOW_OK_METHOD])
+
+proc addConsumer*(ch: Channel, consumer: ConsumerTag) =
+  ch.consumers[consumer.id] = consumer
+
+proc removeConsumer*(ch: Channel, consumer: ConsumerTag) =
+  ch.consumers.del(consumer.id)
+
+proc onReturn*(ch: Channel, cb: proc(msg: Message): Future[void]) =
+  ch.onReturn = cb
 
 # -- pvt RMQ
 
@@ -280,7 +307,7 @@ proc readFrame(rmq: RabbitMQConn): Future[Frame] {.async.} =
 proc waitMethods(rmq: RabbitMQConn, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.} =
   let frame = await rmq.readFrame()
   if frame.frameType == ftMethod:
-    if frame.meth.methodId.idToAMQPMethod notin expectedMethods:
+    if frame.meth.idToAMQPMethod() notin expectedMethods:
       raise newException(AMQPUnexpectedMethod, "Method " & $frame.meth.methodId & " is unexpected")
     result = frame.meth
   else:
@@ -293,14 +320,13 @@ proc sendHeader(conn: RabbitMQConn, channel: uint16 = 0, bodySize: uint64, props
   let frame = newHeaderFrame(channel, bodySize, props)
   await conn.sock.encodeFrame(frame)
 
-proc sendBody(conn: RabbitMQConn, channel: uint16 = 0, data: sink openArray[byte]) {.async.} =
-  var bLen = data.len
+proc sendBody(conn: RabbitMQConn, channel: uint16 = 0, payload: Message) {.async.} =
+  var bLen = payload.data.len
   var start = 0
   while bLen > 0:
     let chunkSize = if bLen > conn.frameMax.int: conn.frameMax.int else: bLen
-    let body = newStringOfCap(chunkSize)
-    copyMem(body[0].unsafeAddr, data[start].addr, chunkSize)
-    let frame = newBodyFrame(channel, body)
+    let frame = newBodyFrame(channel, chunkSize)
+    copyMem(frame.fragment[0].addr, payload.data[start].addr, chunkSize)
     await conn.sock.encodeFrame(frame)
     start.inc(chunkSize)
     bLen.dec(chunkSize)
@@ -310,7 +336,7 @@ proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, paylo
   await conn.sock.encodeFrame(frame)
   if not payload.isNil:
     await conn.sendHeader(channel, payload.data.len.uint64, payload.props)
-    await conn.sendBody(channel, payload.data)
+    await conn.sendBody(channel, payload)
 
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   let header = newProtocolHeaderFrame(PROTOCOL_VERSION[0], PROTOCOL_VERSION[1], PROTOCOL_VERSION[2])
@@ -364,14 +390,13 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   
 proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] =
   conn.retFuture = newFuture[AMQPMethod]("syncRPC0")
-  
   proc send() {.async.} =
     await conn.sendMethod(meth, 0)
   
   proc recv(): Future[AMQPMethod] {.async.} =
     let frame = await conn.readFrame()
     if frame.frameType == ftMethod:
-      if frame.meth.methodId.idToAMQPMethod in expectedMethods:
+      if frame.meth.idToAMQPMethod() in expectedMethods:
         result = frame.meth
       elif frame.meth.methodId == CONNECTION_CLOSE_METHOD_ID:
         await conn.disconnect(fromClose=true)
@@ -385,7 +410,8 @@ proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AM
     result = await recv()
   
   if conn.authenticated:
-    let sfut {.used.} = send()
+    let sfut = send()
+    asyncCheck sfut
   else:
     var res = both()
     res.callback =
@@ -426,32 +452,75 @@ proc consume(rmq: RabbitMQConn) {.async.} =
 # -- pvt Channel
 
 proc onFrame(ch: Channel, frame: Frame) {.async.} =
+  template fut: untyped = Future[Payload](ch.resultFuture)
   case frame.frameType
   of ftMethod:
-    let methEnum = frame.meth.methodId.idToAMQPMethod
-    if methEnum in [AMQP_BASIC_DELIVER_METHOD, AMQP_BASIC_RETURN_METHOD, AMQP_BASIC_ACK_METHOD, AMQP_BASIC_NACK_METHOD]:
-      #TODO implement consuming
-      discard
-    if ch.resultFuture.isNil or ch.resultFuture.finished:
+    let methEnum = frame.meth.idToAMQPMethod()
+    if methEnum == AMQP_CHANNEL_CLOSE_METHOD:
+      await ch.onClose()
+      return
+    if methEnum in [AMQP_BASIC_DELIVER_METHOD, AMQP_BASIC_RETURN_METHOD]:
+      ch.dataFrame = newPayload(frame.meth, newMessage())
+      return
+    if ch.resultFuture.finished:
       discard
     elif ch.expectedMethods.len == 0:
       ch.resultFuture.complete(nil)
     elif methEnum notin ch.expectedMethods:
-      ch.resultFuture.fail(newException(AMQPUnexpectedMethod, "Method " & $methEnum & " is unexpected"))
+      fut.fail(newException(AMQPUnexpectedMethod, "Method " & $methEnum & " is unexpected"))
     else:
-      ch.resultFuture.complete(frame.meth)
+      if methEnum == AMQP_BASIC_GET_OK_METHOD:
+        ch.resultFuture.mget() = newPayload(frame.meth, newMessage())
+      else:
+        ch.resultFuture.complete(newPayload(frame.meth, nil))
   of ftHeader:
-    echo "HEADER"
-    discard
+    if ch.resultFuture.finished and ch.dataFrame.isNil:
+      raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
+    else:
+      if ch.dataFrame.isNil:
+        discard ch.resultFuture.mget().msg.build(frame)
+      else:
+        discard ch.dataFrame.msg.build(frame)
   of ftBody:
-    echo "BODY"
-    discard
+    if ch.resultFuture.finished and ch.dataFrame.isNil:
+      raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
+    else:
+      if ch.dataFrame.isNil:
+        let success = ch.resultFuture.mget.msg.build(frame)
+        if success:
+          ch.resultFuture.complete()
+      else:
+        let success = ch.dataFrame.msg.build(frame)
+        if success:
+          await ch.onDeliverReturn()
+          ch.dataFrame = nil
   else:
-    ch.resultFuture.fail(newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected"))
+    fut.fail(newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected"))
 
 proc onClose(ch: Channel) {.async.} =
   #TODO need to cancel all the consumers and stop them
+  template fut: untyped = Future[Payload](ch.resultFuture)
   echo "Channel " & $ch.channelId & " closing"
-  if not ch.resultFuture.isNil and not ch.resultFuture.finished:
-    ch.resultFuture.fail(newAMQPException(AMQPInternalError, "Connection closing unexpectedly", 503))
+  if not ch.resultFuture.finished:
+    fut.fail(newAMQPException(AMQPChannelClosed, "Channel is closing", 503))
   discard
+
+proc onDeliverReturn(ch: Channel) {.async.} =
+  case ch.dataFrame.meth.idToAMQPMethod
+  of AMQP_BASIC_DELIVER_METHOD:
+    let ct = ch.dataFrame.meth.basicObj.consumerTag()
+    let consumerTag = ch.consumers.getOrDefault(ct, nil)
+    if consumerTag.isNil:
+      raise newException(KeyError, "No such consumer with id " & ct)
+    if consumerTag.onDeliver.isNil:
+      return
+    let basicMethod = ch.dataFrame.meth.basicObj
+    let env = newEnvelope(consumerTag, basicMethod.deliveryTag, basicMethod.exchange, basicMethod.routingKey, ch.dataFrame.msg, basicMethod.redelivered)
+    asyncCheck consumerTag.onDeliver(env)
+  of AMQP_BASIC_RETURN_METHOD:
+    if ch.onReturn.isNil:
+      return
+    asyncCheck ch.onReturn(ch.dataFrame.msg)
+  else:
+    discard
+  ch.dataFrame = nil

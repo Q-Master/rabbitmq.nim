@@ -28,10 +28,10 @@ type
     of ftMethod:
       meth*: AMQPMethod
     of ftHeader:
-      bodySize: uint64
-      props: Properties
+      bodySize*: uint64
+      props*: Properties
     of ftBody:
-      fragment: string
+      fragment*: seq[byte]
     of ftHeartBeat:
       discard
     of ftProtocolHeader:
@@ -50,11 +50,17 @@ proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): F
   result.bodySize = bodySize
   result.props = props
 
-proc newBodyFrame*(channelNum: uint16, fragment: string): Frame =
+proc newBodyFrame*(channelNum: uint16, fragment: seq[byte]): Frame =
   result.new
   result.frameType = ftBody
   result.channelNum = channelNum
   result.fragment = fragment
+
+proc newBodyFrame*(channelNum: uint16, size: int): Frame =
+  result.new
+  result.frameType = ftBody
+  result.channelNum = channelNum
+  result.fragment.setLen(size)
 
 proc newHeartBeatFrame*(channelNum: uint16): Frame =
   result.new
@@ -86,8 +92,8 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
     let props = await src.decodeProperties(clsId)
     result = newHeaderFrame(chNum, bodySize, props)
   of FRAME_BODY:
-    let str = await src.readString(fSize.int)
-    result = newBodyFrame(chNum, str)
+    result = newBodyFrame(chNum, fSize.int)
+    await src.recvInto(result.fragment[0].addr, fSize.int)
   of FRAME_HEARTBEAT:
     result = newHeartBeatFrame(chNum)
   else:
@@ -118,7 +124,7 @@ proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
       #echo "METHOD: ", f.meth.kind, ", ", f.meth.methodId.toHex
       #echo "SIZE: ", f.meth.len()
     of ftBody:
-      await dest.writeString(f.fragment)
+      let size {.used.} = await dest.send(f.fragment)
     else:
       discard
     await dest.write(FRAME_END)

@@ -320,7 +320,7 @@ proc newQueueDeleteOk*(messageCount: uint32): AMQPQueue =
 proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
   result = AMQPQueue(
     kind: AMQP_QUEUE_UNBIND_SUBMETHOD, 
-    unbind: AMQPQueueUnBindObj(
+    unbind: AMQPQueueUnbindObj(
       queue: queue,
       exchange: exchange,
       routingKey: routingKey,

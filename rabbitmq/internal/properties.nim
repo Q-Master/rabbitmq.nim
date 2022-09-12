@@ -125,7 +125,7 @@ proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties]
   else:
     discard
 
-proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties): Future[Properties] {.async.} =
+proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties) {.async.} =
   var flags: uint32 = (if p.kind == BASIC_PROPERTIES: cast[uint32](p.basicFlags) else: p.flags)
   while true:
     let remainder:uint32 = flags shr 16

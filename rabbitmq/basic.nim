@@ -23,34 +23,7 @@ import ./connection
 import ./queue
 import ./exchange
 import ./message
-
-type
-  ConsumerTag* = ref ConsumerTagObj
-  ConsumerTagObj* = object of RootObj
-    id: string
-    channel: Channel
-    onDeliver: proc (msg: Message): Future[void]
-    onReturn: proc (msg: Message): Future[void]
-
-  Envelope* = ref EnvelopeObj
-  EnvelopeObj* = object of RootObj
-    consumerTag*: ConsumerTag
-    deliveryTag*: uint64
-    exchange*: Exchange
-    routingKey*: string
-    msg*: Message
-    redelivered*: bool
-
-proc newConsumerTag*(id: string, channel: Channel): ConsumerTag =
-  result.new
-  result.id = id
-  result.channel = channel
-
-proc consumerTagId(tag: ConsumerTag): string =
-  if tag.isNil:
-    result = ""
-  else:
-    result = tag.id
+import ./consumertag
 
 proc qos*(channel: Channel, prefetchSize=0.uint32, prefetchCount=0.uint16, globalQos=false) {.async.} =
   let res {.used.} = await channel.rpc(
@@ -67,27 +40,29 @@ proc consume*(
   ): Future[ConsumerTag] {.async.} =
   let res = await queue.channel.rpc(
     newBasicConsumeMethod(
-      queue.id, consumerTag.consumerTagId,
+      queue.id, consumerTag.id,
       noLocal, noAck, exclusive, noWait,
       args
     ), 
     @[AMQP_BASIC_CONSUME_OK_METHOD],
     noWait = noWait
   )
-  result = newConsumerTag(res.basicObj.consumerTag, queue.channel)
+  result = newConsumerTag(res.meth.basicObj.consumerTag)
+  queue.channel.addConsumer(result)
 
-proc cancel*(consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {.async.} =
-  let res = await consumerTag.channel.rpc(
+proc cancel*(ch: Channel, consumerTag: ConsumerTag, noWait=false): Future[ConsumerTag] {.async.} =
+  let res = await ch.rpc(
     newBasicCancelMethod(
-      consumerTag.consumerTagId, noWait
+      consumerTag.id, noWait
     ), 
     @[AMQP_BASIC_CANCEL_OK_METHOD],
     noWait = noWait
   )
   if not res.isNil:
-    if res.basicObj.consumerTag != consumerTag.consumerTagId:
+    if res.meth.basicObj.consumerTag != consumerTag.id:
       raise newException(AMQPCommandInvalid, "Consumer tag differs")
   result = consumerTag
+  ch.removeConsumer(consumerTag)
 
 proc publish*(
   exchange: Exchange, routingKey: string, msg: Message, 
