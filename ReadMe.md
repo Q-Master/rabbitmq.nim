@@ -3,7 +3,7 @@ This is a asyncronous driver to use with [RabbitMQ message broker](https://www.r
 
 Driver features
 -----------------
-This driver implements AMQP 0.9.6 specification. This table shows working AMQP classes.
+This driver implements AMQP 0.9.1 specification. This table shows working AMQP classes.
 
 | Classes    | Status             |  Notes |
 |------------:|:-------------------|:-------|
