@@ -1,3 +1,7 @@
+#[
+Class Grammar:
+    confirm = C:SELECT S:SELECT-OK
+]#
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../exceptions

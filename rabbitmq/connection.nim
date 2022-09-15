@@ -109,17 +109,6 @@ proc newPayload*(meth: AMQPMethod, msg: Message): Payload =
 
 # ---  Channel
 
-#[
-Class Grammar:
-    channel       = open-channel *use-channel close-channel
-    open-channel  = C:OPEN S:OPEN-OK
-    use-channel   = C:FLOW S:FLOW-OK
-                  / S:FLOW C:FLOW-OK
-                  / functional-class
-    close-channel = C:CLOSE S:CLOSE-OK
-                  / S:CLOSE C:CLOSE-OK
-]#
-
 proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
   result = Channel(
     connection: connection,

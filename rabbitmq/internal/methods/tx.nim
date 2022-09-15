@@ -1,3 +1,9 @@
+#[
+Class Grammar:
+    tx  = C:SELECT S:SELECT-OK
+        / C:COMMIT S:COMMIT-OK
+        / C:ROLLBACK S:ROLLBACK-OK
+]#  
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../exceptions

@@ -1,3 +1,12 @@
+#[
+Class Grammar:
+    queue = C:DECLARE  S:DECLARE-OK
+          / C:BIND     S:BIND-OK
+          / C:UNBIND   S:UNBIND-OK
+          / C:PURGE    S:PURGE-OK
+          / C:DELETE   S:DELETE-OK
+]#
+
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field

@@ -1,3 +1,17 @@
+#[
+Class Grammar:
+    connection          = open-connection *use-connection close-connection
+    open-connection     = C:protocol-header
+                          S:START C:START-OK
+                          *challenge
+                          S:TUNE C:TUNE-OK
+                          C:OPEN S:OPEN-OK
+    challenge           = S:SECURE C:SECURE-OK
+    use-connection      = *channel
+    close-connection    = C:CLOSE S:CLOSE-OK
+                        / S:CLOSE C:CLOSE-OK  
+]#
+
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field

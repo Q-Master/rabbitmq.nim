@@ -1,3 +1,11 @@
+#[
+Class Grammar:
+    exchange  = C:DECLARE  S:DECLARE-OK
+              / C:DELETE   S:DELETE-OK
+              / C:BIND     S:BIND-OK
+              / C:UNBIND   S:UNBIND-OK
+]#
+
 import std/[asyncdispatch, tables, strutils]
 import pkg/networkutils/buffered_socket
 import ../field
