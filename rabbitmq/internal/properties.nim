@@ -77,6 +77,48 @@ proc newBasicProperties*(): Properties =
     basicFlags: cast[BasicPropertiesFlags](0.uint32)
   )
 
+proc len*(p: Properties): int =
+  result = 0
+  var flags: uint32 = (if p.kind == BASIC_PROPERTIES: cast[uint32](p.basicFlags) else: p.flags)
+  while true:
+    let remainder:uint32 = flags shr 16
+    result.inc(sizeInt16Uint16)
+    flags = remainder
+    if flags == 0:
+      break
+  case p.kind:
+  of BASIC_PROPERTIES:
+    if p.basicFlags.contentType:
+      result.inc(p.contentType.shortStringLen())
+    if p.basicFlags.contentEncoding:
+      result.inc(p.contentEncoding.shortStringLen())
+    if p.basicFlags.headers:
+      result.inc(p.headers.len())
+    if p.basicFlags.deliveryMode:
+      result.inc(sizeInt8Uint8)
+    if p.basicFlags.priority:
+      result.inc(sizeInt8Uint8)
+    if p.basicFlags.correlationId:
+      result.inc(p.correlationId.shortStringLen())
+    if p.basicFlags.replyTo:
+      result.inc(p.replyTo.shortStringLen())
+    if p.basicFlags.expiration:
+      result.inc(p.expiration.shortStringLen())
+    if p.basicFlags.messageId:
+      result.inc(p.messageId.shortStringLen())
+    if p.basicFlags.timestamp:
+      result.inc(sizeInt64Uint64)
+    if p.basicFlags.pType:
+      result.inc(p.pType.shortStringLen())
+    if p.basicFlags.userId:
+      result.inc(p.userId.shortStringLen())
+    if p.basicFlags.appId:
+      result.inc(p.appId.shortStringLen())
+    if p.basicFlags.clusterId:
+      result.inc(p.clusterId.shortStringLen())
+  else:
+    discard
+
 {.warning[HoleEnumConv]:off.}
 proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties] {.async.} =
   if id notin ALL_PROPERTIES_IDS:

@@ -11,10 +11,13 @@ proc newMessage*(): Message =
   result.new()
   result.pos = 0
 
+
 proc newMessage*(data: openArray[byte], props: Properties): Message =
   let props = if props.isNil: newBasicProperties() else: props
   result = Message(props: props, data: @data)
   result.pos = data.len.uint64
+
+proc newMessage*(data: string, props: Properties): Message = newMessage(data.toOpenArrayByte(0, data.len()-1), props)
 
 proc build*(msg: Message, frame: Frame): bool =
   if frame.frameType == ftHeader and msg.props.isNil:

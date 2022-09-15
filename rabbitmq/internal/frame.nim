@@ -48,20 +48,23 @@ proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): F
     frameType: ftHeader,
     channelNum: channelNum,
     bodySize: bodySize,
-    props: props
+    props: props,
+    size: (sizeInt16Uint16+sizeInt16Uint16+sizeInt64Uint64+props.len()).uint32
   )
 
 proc newBodyFrame*(channelNum: uint16, fragment: seq[byte]): Frame =
   result = Frame(
     frameType: ftBody,
     channelNum: channelNum,
-    fragment: fragment
+    fragment: fragment,
+    size: fragment.len().uint32
   )
 
 proc newBodyFrame*(channelNum: uint16, size: int): Frame =
   result = Frame(
     frameType: ftBody,
-    channelNum: channelNum
+    channelNum: channelNum,
+    size: size.uint32
   )
   result.fragment.setLen(size)
 
