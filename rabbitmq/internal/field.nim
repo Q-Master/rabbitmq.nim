@@ -3,6 +3,8 @@ import pkg/networkutils/buffered_socket
 import ./exceptions
 import ./spec
 
+export tables
+
 type
   Decimal = string
   FieldType* = enum
@@ -71,6 +73,48 @@ type
       tableVal*: FieldTable
     of dtVoid:
       discard
+
+proc `==`*(a, b: Field): bool =
+  if a.kind == b.kind:
+    case a.kind
+    of dtBool:
+      result = a.boolVal == b.boolVal
+    of dtByte:
+      result = a.byteVal == b.byteVal
+    of dtUByte:
+      result = a.uByteVal == b.uByteVal
+    of dtShort, dtSignedShort:
+      result = a.shortVal == b.shortVal
+    of dtUShort:
+      result = a.uShortVal == b.uShortVal
+    of dtInt:
+      result = a.intVal == b.intVal
+    of dtUInt:
+      result = a.uIntVal == b.uIntVal
+    of dtLong:
+      result = a.longVal == b.longVal
+    of dtULong:
+      result = a.uLongVal == b.uLongVal
+    of dtFloat:
+      result = a.floatVal == b.floatVal
+    of dtDouble:
+      result = a.doubleVal == b.doubleVal
+    of dtDecimal:
+      result = a.decimalVal == b.decimalVal
+    of dtString:
+      result = a.stringVal == b.stringVal
+    of dtBytes:
+      result = a.bytesVal == b.bytesVal
+    of dtArray:
+      result = a.arrayVal == b.arrayVal
+    of dtTimestamp:
+      result = a.tsVal == b.tsVal
+    of dtTable:
+      result = a.tableVal == b.tableVal
+    of dtVoid:
+      result = true
+  else:
+    result = false
 
 proc len*(f: Field): int =
   result = 0
@@ -196,6 +240,9 @@ proc asField*(x: bool): Field =
 
 proc asField*(x: FieldTable): Field =
   result = Field(kind: dtTable, tableVal: x)
+
+proc asField*(x: Time): Field =
+  result = Field(kind: dtTimestamp, tsVal: x)
 
 proc newFieldTable*(initialSize = defaultInitialSize): FieldTable =
   result = newOrderedTable[string, Field]()

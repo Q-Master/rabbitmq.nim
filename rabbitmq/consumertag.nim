@@ -9,7 +9,7 @@ type
 
   Envelope* = ref EnvelopeObj
   EnvelopeObj* = object of RootObj
-    consumerTag*: ConsumerTag
+    consumerTag*: string
     deliveryTag*: uint64
     exchange*: string
     routingKey*: string
@@ -18,7 +18,7 @@ type
 
 proc newEnvelope*(ct: ConsumerTag, dt: uint64, ex: string, rk: string, msg: Message, redelivered: bool = false): Envelope =
   result = Envelope(
-    consumerTag: ct,
+    consumerTag: ct.id,
     deliveryTag: dt,
     exchange: ex,
     routingKey: rk,

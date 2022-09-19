@@ -1,4 +1,4 @@
-import std/[times, asyncdispatch, options]
+import std/[times, asyncdispatch, options, strutils]
 import pkg/networkutils/buffered_socket
 import ./field
 import ./exceptions
@@ -322,20 +322,20 @@ proc `messageId=`*(self: Properties, messageId: string) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc expiration*(self: Properties): Option[string] =
+proc expiration*(self: Properties): Option[Duration] =
   case self.kind
   of BASIC_PROPERTIES:
     if self.basicFlags.expiration:
-      result = self.expiration.option
+      result = initDuration(milliseconds=parseInt(self.expiration)).option
     else:
-      result = string.none
+      result = Duration.none
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `expiration=`*(self: Properties, expiration: string) =
+proc `expiration=`*(self: Properties, expiration: Duration) =
   case self.kind
   of BASIC_PROPERTIES:
-    self.expiration = expiration
+    self.expiration = $(expiration.inMilliseconds())
     self.basicFlags.expiration = true
   else:
     raise newException(FieldDefect, "No such field")
