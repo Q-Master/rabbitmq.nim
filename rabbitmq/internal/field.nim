@@ -151,6 +151,8 @@ proc len*(f: Field): int =
 
 proc len*(f: FieldTable): int =
   result.inc(sizeInt32Uint32)
+  if f.isNil:
+    return
   for k,v in f.pairs():
     result.inc(k.len() + sizeInt8Uint8)
     result.inc(v.len() + sizeInt8Uint8)

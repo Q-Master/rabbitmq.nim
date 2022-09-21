@@ -20,6 +20,9 @@ proc consume*(
   noLocal=false, noAck=false, exclusive=false, noWait=false, 
   args: FieldTable=nil
   ): Future[ConsumerTag] {.async.} =
+  var args = args
+  if args.isNil:
+    args = newFieldTable()
   let res = await queue.channel.rpc(
     newBasicConsumeMethod(
       queue.id, consumerTag.id,

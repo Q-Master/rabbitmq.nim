@@ -442,9 +442,11 @@ proc consume(rmq: RabbitMQConn) {.async.} =
 
 proc onFrame(ch: Channel, frame: Frame) {.async.} =
   template fut: untyped = Future[Payload](ch.resultFuture)
+  #echo "Got frame: " & $frame.frameType
   case frame.frameType
   of ftMethod:
     let methEnum = frame.meth.idToAMQPMethod()
+    #echo "Method: " & $methEnum
     if methEnum == AMQP_CHANNEL_CLOSE_METHOD:
       await ch.onClose()
       return
@@ -463,6 +465,7 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
       else:
         ch.resultFuture.complete(newPayload(frame.meth, nil))
   of ftHeader:
+    #echo "Header: " & $ch.resultFuture.finished & " " & $ch.dataFrame.isNil
     if ch.resultFuture.finished and ch.dataFrame.isNil:
       raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
     else:
@@ -471,6 +474,7 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
       else:
         discard ch.dataFrame.msg.build(frame)
   of ftBody:
+    #echo "Body: " & $ch.resultFuture.finished & " " & $ch.dataFrame.isNil
     if ch.resultFuture.finished and ch.dataFrame.isNil:
       raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
     else:
