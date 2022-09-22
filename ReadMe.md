@@ -10,8 +10,8 @@ This driver implements AMQP 0.9.1 specification. This table shows working AMQP c
 | Connection  | Tested and working | Not fully tested amqps connection and connection to multiple instances, closing a connection from server is not properly working yet|
 | Channel     | Tested and working | Not tested: flow methods |
 | Exchange    | Tested and working | Not tested: binding and unbinding |
-| Queue       | Tested and working |  |
-| Basic       | Not yet completely implemented HL | |
+| Queue       | Tested and working | |
+| Basic       | Tested and working | |
 | Confirm     | Not yet completely implemented HL | |
 | TX          | Not yet completely implemented HL | |
 
