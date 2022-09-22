@@ -182,7 +182,7 @@ proc addConsumer*(ch: Channel, consumer: ConsumerTag) =
 proc removeConsumer*(ch: Channel, consumer: ConsumerTag) =
   ch.consumers.del(consumer.id)
 
-proc onReturn*(ch: Channel, cb: proc(msg: Message): Future[void]) =
+proc `onReturn=`*(ch: Channel, cb: proc(msg: Message): Future[void]) =
   ch.onReturn = cb
 
 # -- pvt RMQ

@@ -112,3 +112,42 @@ suite "RabbitMQ basic":
       await fut
 
     waitFor(testBasicPublishConsume())
+
+  test "Basic return":
+    proc testBasicReturn() {.async} =
+      var resfut = newFuture[void]("Awaiting for result to check")
+      proc onReturnCB(msg: Message) {.async.} =
+        checkpoint "Verifying the message"
+        check msg.data == @(message.toOpenArrayByte(0, message.len-1))
+        check msg.props.headers.hasKey("rpc")
+        check msg.props.headers["rpc"].stringVal == "OK"
+        resfut.complete()
+      
+      var address = "amqp://guest:guest@localhost/".fromURL()
+      var connection = newRabbitMQ(address, 1)
+      try:
+        await connection.connect()
+        checkpoint "Allocating channel"
+        let chan = await connection.openChannel()
+        checkpoint "Setting onReturn callback"
+        chan.onReturn = onReturnCB
+        checkpoint "Creating exchange"
+        let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT, autoDelete = true)
+        check exchange.id == "testExchange"
+        let props = newBasicProperties()
+        let headers = {"rpc": "OK"}.asFieldTable()
+        props.headers=headers
+        props.correlationId="The best correlation ID I've ever met"
+        let msg = newMessage(message, props)
+        await exchange.publish("testKey", msg, mandatory = true)
+        await resfut
+        checkpoint "Closing the channel"
+        await chan.close()
+      except RMQConnectionFailed:
+        checkpoint "Can't connect to RabbitMQ instance"
+        fail()
+      finally:
+        checkpoint "Closing the connection"
+        await connection.close()
+
+    waitFor(testBasicReturn())
