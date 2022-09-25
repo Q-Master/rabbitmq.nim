@@ -39,11 +39,13 @@ type
     connection: RabbitMQConn
     channelId*: uint16
     opened: bool
+    active: bool
     expectedMethods: seq[AMQPMethods]
     resultFuture: FutureVar[Payload]
     dataFrame: Payload
     consumers: Table[string, ConsumerTag]
     onReturn: proc(msg: Message): Future[void]
+    flowWaiters: seq[Future[void]]
   
   Payload* = ref PayloadObj
   PayloadObj* = object of RootObj
@@ -67,6 +69,9 @@ proc consume(rmq: RabbitMQConn) {.async.}
 proc onClose(ch: Channel) {.async.}
 proc onFrame(ch: Channel, frame: Frame) {.async.}
 proc onDeliverReturn(ch: Channel) {.async.}
+proc onFlow(ch: Channel, active: bool) {.async.}
+proc processFlowWaiters(channel: Channel)
+proc cancelFlowWaiters(channel: Channel)
 
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
@@ -114,9 +119,11 @@ proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
     connection: connection,
     channelId: channelId,
     opened: false,
+    active: true,
     expectedMethods: @[],
     resultFuture: newFutureVar[Payload]("Resulting future"),
-    dataFrame: nil
+    dataFrame: nil,
+    flowWaiters: @[]
   )
   result.resultFuture.complete() # needed to RPC to work at first time. dirty hack because of non-nullable futurevar
 
@@ -159,6 +166,7 @@ proc openChannel*(pool: RabbitMQ): Future[Channel] {.async.} =
   try:
     let res {.used.} = await result.rpc(newChannelOpenMethod(""), @[AMQP_CHANNEL_OPEN_OK_METHOD])
     result.opened = true
+    result.active = true
   except:
     conn.channels.del(chId)
     raise
@@ -170,11 +178,20 @@ proc close*(channel: Channel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
     let res {.used.} = await channel.rpc(newChannelCloseMethod(ord(kind).uint16, $kind, 0, 0,), @[AMQP_CHANNEL_CLOSE_OK_METHOD])
     channel.connection.channels.del(channel.channelId)
     channel.opened = false
+    channel.cancelFlowWaiters()
   else:
     raise newException(AMQPChannelError, "Channel is already freed")
 
 proc flow*(channel: Channel, active: bool) {.async.} =
-  let res {.used.} = await channel.rpc(newChannelFlowMethod(active), @[AMQP_CHANNEL_FLOW_OK_METHOD])
+  let res = await channel.rpc(newChannelFlowMethod(active), @[AMQP_CHANNEL_FLOW_OK_METHOD])
+  channel.active = res.meth.channelObj.active
+  if channel.active:
+    channel.processFlowWaiters()
+
+proc addOnFlow*(channel: Channel, fut: Future[void]) =
+  channel.flowWaiters.add(fut)
+
+proc active*(channel: Channel): bool = channel.active
 
 proc addConsumer*(ch: Channel, consumer: ConsumerTag) =
   ch.consumers[consumer.id] = consumer
@@ -450,6 +467,9 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
     if methEnum == AMQP_CHANNEL_CLOSE_METHOD:
       await ch.onClose()
       return
+    if methEnum == AMQP_CHANNEL_FLOW_METHOD:
+      await ch.onFlow(frame.meth.channelObj.active)
+      return
     if methEnum in [AMQP_BASIC_DELIVER_METHOD, AMQP_BASIC_RETURN_METHOD]:
       ch.dataFrame = newPayload(frame.meth, newMessage())
       return
@@ -496,7 +516,7 @@ proc onClose(ch: Channel) {.async.} =
   echo "Channel " & $ch.channelId & " closing"
   if not ch.resultFuture.finished:
     fut.fail(newAMQPException(AMQPChannelClosed, "Channel is closing", 503))
-  discard
+  ch.cancelFlowWaiters()
 
 proc onDeliverReturn(ch: Channel) {.async.} =
   case ch.dataFrame.meth.idToAMQPMethod
@@ -517,3 +537,23 @@ proc onDeliverReturn(ch: Channel) {.async.} =
   else:
     discard
   ch.dataFrame = nil
+
+proc onFlow(ch: Channel, active: bool) {.async.} =
+  ch.active = active
+  let res {.used.} = await ch.rpc(
+    newChannelFlowOkMethod(active), @[]
+  )
+  if active:
+    ch.processFlowWaiters()
+
+proc processFlowWaiters(channel: Channel) =
+  let flowWaitersCopy = channel.flowWaiters
+  channel.flowWaiters = @[]
+  for fut in flowWaitersCopy:
+    fut.complete()
+
+proc cancelFlowWaiters(channel: Channel) =
+  let flowWaitersCopy = channel.flowWaiters
+  channel.flowWaiters = @[]
+  for fut in flowWaitersCopy:
+    fut.fail(newException(AMQPChannelClosed, "Channel is closing"))
