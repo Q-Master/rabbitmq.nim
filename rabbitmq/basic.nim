@@ -53,7 +53,7 @@ proc publish*(
   exchange: Exchange, routingKey: string, msg: Message, 
   mandatory=false, immediate=false
   ) {.async.} =
-  if not exchange.channel.active:
+  if not exchange.channel.active or exchange.channel.blocked:
     let waiter = newFuture[void]("Waiting for flow to activate")
     exchange.channel.addOnFlow(waiter)
     await waiter
