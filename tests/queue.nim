@@ -1,5 +1,5 @@
 import std/[unittest, asyncdispatch]
-import rabbitmq/[rabbitmq, connection, queue, exchange]
+import asyncrabbitmq/[asyncrabbitmq, connection, queue, exchange]
 
 suite "RabbitMQ queue":
   setup:

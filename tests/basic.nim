@@ -1,5 +1,5 @@
 import std/[unittest, asyncdispatch]
-import rabbitmq/[rabbitmq, connection, exchange, queue, basic, message, consumertag]
+import asyncrabbitmq/[asyncrabbitmq, connection, exchange, queue, basic, message, consumertag]
 
 suite "RabbitMQ basic":
   const message = "Message"
