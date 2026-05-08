@@ -6,12 +6,12 @@ import ./message
 type
   Transaction = ref TransactionObj
   TransactionObj = object of RootObj
-    channel: Channel
+    channel: AMQPChannel
 
 proc rpc*(tr: Transaction, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[Payload] =
   tr.channel.rpc(meth, expectedMethods, payload, noWait)
 
-proc select*(channel: Channel): Future[Transaction] {.async.} =
+proc select*(channel: AMQPChannel): Future[Transaction] {.async.} =
   let res {.used.} = await channel.rpc(
     newTxSelectMethod(), @[AMQP_TX_SELECT_OK_METHOD]
   )

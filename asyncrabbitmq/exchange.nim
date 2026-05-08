@@ -3,21 +3,25 @@ import ./internal/methods/all
 import ./internal/[exceptions, field]
 import ./connection
 
+
 export AMQPExchangeType
+
 
 type
   Exchange* = ref ExchangeObj
   ExchangeObj* = object of RootObj
     id: string
-    channel: Channel
+    channel: AMQPChannel
 
-proc newExchange*(id: string, channel: Channel): Exchange =
+
+proc newExchange*(id: string, channel: AMQPChannel): Exchange =
   result.new
   result.id = id
   result.channel = channel
 
+
 proc exchangeDeclare*(
-    channel: Channel, exchange: string, exchangeType: AMQPExchangeType,
+    channel: AMQPChannel, exchange: string, exchangeType: AMQPExchangeType,
     passive = false, durable = false, autoDelete = false, internal = false, noWait = false,
     args: FieldTable = nil
   ): Future[Exchange] {.async.} =
@@ -33,6 +37,7 @@ proc exchangeDeclare*(
   )
   result = newExchange(exchange, channel)
 
+
 proc delete*(exchange: Exchange, ifUnused = false, noWait = false) {.async.} =
   let res {.used.} = await exchange.channel.rpc(
     newExchangeDeleteMethod(
@@ -41,6 +46,7 @@ proc delete*(exchange: Exchange, ifUnused = false, noWait = false) {.async.} =
     @[AMQP_EXCHANGE_DELETE_OK_METHOD],
     noWait = noWait
   )
+
 
 proc exchangeBind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
   var args = args
@@ -58,8 +64,10 @@ proc exchangeBind*(src: Exchange, destination: string, routingKey: string, noWai
   except AMQPNotFound:
     result = false
 
+
 proc exchangeBind*(src, destination : Exchange, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] =
   result = src.exchangeBind(destination.id, routingKey, noWait, args)
+
 
 proc unbind*(src: Exchange, destination: string, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] {.async.} =
   var args = args
@@ -77,8 +85,10 @@ proc unbind*(src: Exchange, destination: string, routingKey: string, noWait=fals
   except AMQPNotFound:
     result = false
 
+
 proc unbind*(src, destination : Exchange, routingKey: string, noWait=false, args: FieldTable = nil): Future[bool] =
   result = src.unbind(destination.id, routingKey, noWait, args)
 
+
 proc id*(exchange: Exchange): string = exchange.id
-proc channel*(exchange: Exchange): Channel = exchange.channel
+proc channel*(exchange: Exchange): AMQPChannel = exchange.channel

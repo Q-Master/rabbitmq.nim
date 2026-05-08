@@ -1,9 +1,10 @@
 import std/[times, tables, asyncdispatch, macros]
 import pkg/networkutils/buffered_socket
-import ./exceptions
 import ./spec
 
+
 export tables
+
 
 type
   Decimal = string
@@ -74,7 +75,12 @@ type
     of dtVoid:
       discard
 
+
 proc `==`*(a, b: Field): bool =
+  if a.isNil and b.isNil:
+    return true
+  if a.isNil or b.isNil:
+    return false
   if a.kind == b.kind:
     case a.kind
     of dtBool:
@@ -106,7 +112,14 @@ proc `==`*(a, b: Field): bool =
     of dtBytes:
       result = a.bytesVal == b.bytesVal
     of dtArray:
-      result = a.arrayVal == b.arrayVal
+      if a.arrayVal.len == b.arrayVal.len:
+        result = true
+        for i in 0 ..< a.arrayVal.len:
+          result = result and (a.arrayVal[i] == b.arrayVal[i])
+          if not result:
+            break
+      else:
+        result = false
     of dtTimestamp:
       result = a.tsVal == b.tsVal
     of dtTable:
@@ -115,6 +128,7 @@ proc `==`*(a, b: Field): bool =
       result = true
   else:
     result = false
+
 
 proc len*(f: Field): int =
   result = 0
@@ -149,6 +163,7 @@ proc len*(f: Field): int =
   of dtVoid:
     result.inc(0)
 
+
 proc len*(f: FieldTable): int =
   result.inc(sizeInt32Uint32)
   if f.isNil:
@@ -157,13 +172,16 @@ proc len*(f: FieldTable): int =
     result.inc(k.len() + sizeInt8Uint8)
     result.inc(v.len() + sizeInt8Uint8)
 
+
 proc shortStringLen*(s: string): int =
   if s.len > uint8.high.int:
-    raise newException(InvalidShortStringSizeException, "String is too long: " & $s.len)
+    raise newException(ValueError, "String is too long: " & $s.len)
   result = s.len+sizeInt8Uint8
+
 
 proc stringLen*(s: string): int =
   result = s.len+sizeInt32Uint32
+
 
 proc `$`*(f: Field): string =
   case f.kind
@@ -204,54 +222,71 @@ proc `$`*(f: Field): string =
   of dtVoid:
     result = "void"
 
+
 proc asField*(x: int8): Field =
   result = Field(kind: dtByte, byteVal: x)
+
 
 proc asField*(x: uint8): Field =
   result = Field(kind: dtUByte, uByteVal: x)
 
+
 proc asField*(x: int16): Field =
   result = Field(kind: dtShort, shortVal: x)
+
 
 proc asField*(x: uint16): Field =
   result = Field(kind: dtUShort, uShortVal: x)
 
+
 proc asField*(x: int32): Field =
   result = Field(kind: dtInt, intVal: x)
+
 
 proc asField*(x: uint32): Field =
   result = Field(kind: dtUInt, uIntVal: x)
 
+
 proc asField*(x: int64): Field =
   result = Field(kind: dtLong, longVal: x)
+
 
 proc asField*(x: uint64): Field =
   result = Field(kind: dtULong, uLongVal: x)
 
+
 proc asField*(x: float32): Field =
   result = Field(kind: dtFloat, floatVal: x)
+
 
 proc asField*(x: float64): Field =
   result = Field(kind: dtDouble, doubleVal: x)
 
+
 proc asField*(x: string): Field =
   result = Field(kind: dtString, stringVal: x)
+
 
 proc asField*(x: bool): Field =
   result = Field(kind: dtBool, boolVal: x)
 
+
 proc asField*(x: FieldTable): Field =
   result = Field(kind: dtTable, tableVal: x)
+
 
 proc asField*(x: Time): Field =
   result = Field(kind: dtTimestamp, tsVal: x)
 
+
 proc newFieldTable*(initialSize = defaultInitialSize): FieldTable =
   result = newOrderedTable[string, Field]()
+
 
 proc newFieldTable*(pairs: openArray[(string, Field)]): FieldTable =
   result = newOrderedTable[string, Field](pairs.len)
   for key, val in items(pairs): result[key] = val
+
 
 proc asFieldTableImpl(x: NimNode, initial=false): NimNode =
   case x.kind
@@ -281,8 +316,10 @@ proc asFieldTableImpl(x: NimNode, initial=false): NimNode =
   else:
     result = newCall(bindSym("asField", brOpen), x)
 
+
 macro asFieldTable*(x: untyped): untyped =
   result = asFieldTableImpl(x, true)
+
 
 proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.}
 proc decodeArray*(s: AsyncBufferedSocket): Future[seq[Field]] {.async.} =
@@ -294,6 +331,7 @@ proc decodeArray*(s: AsyncBufferedSocket): Future[seq[Field]] {.async.} =
     arr.add(val)
   result = arr
 
+
 proc decodeShortString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.readU8()
   if size == 0:
@@ -301,12 +339,14 @@ proc decodeShortString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   else:
     result = await s.readString(size.int)
 
+
 proc decodeString*(s: AsyncBufferedSocket): Future[string] {.async.} =
   let size = await s.readBEU32()
   if size == 0:
     result = ""
   else:
     result = await s.readString(size.int)
+
 
 proc decodeTable*(s: AsyncBufferedSocket): Future[FieldTable] {.async.} =
   result = newFieldTable()
@@ -317,6 +357,7 @@ proc decodeTable*(s: AsyncBufferedSocket): Future[FieldTable] {.async.} =
     let value = await s.decodeField()
     result[key] = value
     bytesToRead.dec(value.len()+sizeInt8Uint8)
+
 
 proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
   var kind = await s.readU8()
@@ -381,32 +422,39 @@ proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
   of 'V':
     result = Field(kind: dtVoid)
   else:
-    raise newException(InvalidFieldTypeException, "Unknown field type: " & $kind)
+    raise newException(KeyError, "Unknown field type: " & $kind)
+
 
 #----------------------------------------------------------------------------------#
 
+
 proc encodeField(s: AsyncBufferedSocket, data: Field) {.async, gcsafe.}
+
 
 proc encodeArray*(s: AsyncBufferedSocket, arr: Field) {.async.} =
   await s.write(arr.len().uint32 - sizeInt32Uint32.uint32)
   for elem in arr.arrayVal:
     await s.encodeField(elem)
 
+
 proc encodeShortString*(s: AsyncBufferedSocket, str: string) {.async.} =
   await s.write(str.len().uint8)
   if str.len > 0:
     await s.writeString(str)
+
 
 proc encodeString*(s: AsyncBufferedSocket, str: string) {.async.} =
   await s.writeBE(str.len().uint32)
   if str.len > 0:
     await s.writeString(str)
 
+
 proc encodeTable*(s: AsyncBufferedSocket, table: FieldTable) {.async.} =
   await s.writeBE(table.len().uint32 - sizeInt32Uint32.uint32)
   for k, v in table:
     await s.encodeShortString(k)
     await s.encodeField(v)
+
 
 proc encodeField(s: AsyncBufferedSocket, data: Field) {.async, gcsafe.} =
   case data.kind

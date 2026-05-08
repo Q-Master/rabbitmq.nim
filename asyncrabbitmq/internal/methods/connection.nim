@@ -1,35 +1,24 @@
-#[
-Class Grammar:
-    connection          = open-connection *use-connection close-connection
-    open-connection     = C:protocol-header
-                          S:START C:START-OK
-                          *challenge
-                          S:TUNE C:TUNE-OK
-                          C:OPEN S:OPEN-OK
-    challenge           = S:SECURE C:SECURE-OK
-    use-connection      = *channel
-    close-connection    = C:CLOSE S:CLOSE-OK
-                        / S:CLOSE C:CLOSE-OK  
-]#
-
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field
-import ../exceptions
 
-const CONNECTION_METHODS* = 0x000A.uint16
-const CONNECTION_START_METHOD_ID* = 0x000A000A.uint32
-const CONNECTION_START_OK_METHOD_ID* = 0x000A000B.uint32
-const CONNECTION_SECURE_METHOD_ID* = 0x000A0014.uint32
-const CONNECTION_SECURE_OK_METHOD_ID* = 0x000A0015.uint32
-const CONNECTION_TUNE_METHOD_ID* = 0x000A001E.uint32
-const CONNECTION_TUNE_OK_METHOD_ID* = 0x000A001F.uint32
-const CONNECTION_OPEN_METHOD_ID* = 0x000A0028.uint32
-const CONNECTION_OPEN_OK_METHOD_ID* = 0x000A0029.uint32
-const CONNECTION_CLOSE_METHOD_ID* = 0x000A0032.uint32
-const CONNECTION_CLOSE_OK_METHOD_ID* = 0x000A0033.uint32
-const CONNECTION_BLOCKED_METHOD_ID* = 0x000A003C.uint32
-const CONNECTION_UNBLOCKED_METHOD_ID* = 0x000A003D.uint32
+
+const
+  CONNECTION_METHODS* = 0x000A.uint16
+
+  CONNECTION_START_METHOD_ID* = 0x000A000A.uint32
+  CONNECTION_START_OK_METHOD_ID* = 0x000A000B.uint32
+  CONNECTION_SECURE_METHOD_ID* = 0x000A0014.uint32
+  CONNECTION_SECURE_OK_METHOD_ID* = 0x000A0015.uint32
+  CONNECTION_TUNE_METHOD_ID* = 0x000A001E.uint32
+  CONNECTION_TUNE_OK_METHOD_ID* = 0x000A001F.uint32
+  CONNECTION_OPEN_METHOD_ID* = 0x000A0028.uint32
+  CONNECTION_OPEN_OK_METHOD_ID* = 0x000A0029.uint32
+  CONNECTION_CLOSE_METHOD_ID* = 0x000A0032.uint32
+  CONNECTION_CLOSE_OK_METHOD_ID* = 0x000A0033.uint32
+  CONNECTION_BLOCKED_METHOD_ID* = 0x000A003C.uint32
+  CONNECTION_UNBLOCKED_METHOD_ID* = 0x000A003D.uint32
+
 
 {. push warning[ProveField]:on .}
 
@@ -53,8 +42,20 @@ type
     insist {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
     
-  AMQPConnection* = ref AMQPConnectionObj
-  AMQPConnectionObj* = object of RootObj
+  AMQPConnectionMethod* = ref AMQPConnectionMethodObj
+    ## Class Grammar:
+    ##   connection          = open-connection *use-connection close-connection
+    ##   open-connection     = C:protocol-header
+    ##                         S:START C:START-OK
+    ##                         *challenge
+    ##                         S:TUNE C:TUNE-OK
+    ##                         C:OPEN S:OPEN-OK
+    ##   challenge           = S:SECURE C:SECURE-OK
+    ##   use-connection      = *channel
+    ##   close-connection    = C:CLOSE S:CLOSE-OK
+    ##                       / S:CLOSE C:CLOSE-OK
+
+  AMQPConnectionMethodObj* = object of RootObj
     case kind*: AMQPConnectionKind
     of AMQP_CONNECTION_START_SUBMETHOD:
       versionMajor*: uint8
@@ -89,7 +90,8 @@ type
     else:
       discard
 
-proc len*(meth: AMQPConnection): int =
+
+proc len*(meth: AMQPConnectionMethod): int =
   result = 0
   case meth.kind:
   of AMQP_CONNECTION_START_SUBMETHOD:
@@ -123,59 +125,61 @@ proc len*(meth: AMQPConnection): int =
   of AMQP_CONNECTION_BLOCKED_SUBMETHOD:
     result.inc(meth.reason.shortStringLen)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc decode*(_: typedesc[AMQPConnection], s: AsyncBufferedSocket, t: uint32): Future[AMQPConnection] {.async.} =
+
+proc decode*(_: typedesc[AMQPConnectionMethod], s: AsyncBufferedSocket, t: uint32): Future[AMQPConnectionMethod] {.async.} =
   case t:
   of CONNECTION_START_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_START_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_START_SUBMETHOD)
     result.versionMajor = await s.readU8()
     result.versionMinor = await s.readU8()
     result.serverProperties = await s.decodeTable()
     result.mechanisms = await s.decodeString()
     result.locales = await s.decodeString()
   of CONNECTION_START_OK_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_START_OK_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_START_OK_SUBMETHOD)
     result.clientProps = await s.decodeTable()
     result.mechanism = await s.decodeShortString()
     result.response = await s.decodeString()
     result.locale = await s.decodeShortString()
   of CONNECTION_TUNE_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_TUNE_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_TUNE_SUBMETHOD)
     result.channelMax = await s.readBEU16()
     result.frameMax = await s.readBEU32()
     result.heartbeat = await s.readBEU16()
   of CONNECTION_TUNE_OK_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_TUNE_OK_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_TUNE_OK_SUBMETHOD)
     result.channelMax = await s.readBEU16()
     result.frameMax = await s.readBEU32()
     result.heartbeat = await s.readBEU16()
   of CONNECTION_CLOSE_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_CLOSE_SUBMETHOD)
     result.replyCode = await s.readBEU16()
     result.replyText = await s.decodeShortString()
     result.classId = await s.readBEU16()
     result.methodId = await s.readBEU16()
   of CONNECTION_CLOSE_OK_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
   of CONNECTION_OPEN_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_OPEN_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_OPEN_SUBMETHOD)
     result.virtualHost = await s.decodeShortString()
     result.capabilities = await s.decodeShortString()
     let insist: uint8 = await s.readU8()
     result.openFlags = cast[AMQPConnectionOpenBits](insist)
   of CONNECTION_OPEN_OK_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD)
     result.knownHosts = await s.decodeShortString()
   of CONNECTION_BLOCKED_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_BLOCKED_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_BLOCKED_SUBMETHOD)
     result.reason = await s.decodeShortString()
   of CONNECTION_UNBLOCKED_METHOD_ID:
-    result = AMQPConnection(kind: AMQP_CONNECTION_UNBLOCKED_SUBMETHOD)
+    result = AMQPConnectionMethod(kind: AMQP_CONNECTION_UNBLOCKED_SUBMETHOD)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $t)
 
-proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
+
+proc encode*(meth: AMQPConnectionMethod, dst: AsyncBufferedSocket) {.async.} =
   #echo $meth.kind
   case meth.kind:
   of AMQP_CONNECTION_START_SUBMETHOD:
@@ -209,10 +213,11 @@ proc encode*(meth: AMQPConnection, dst: AsyncBufferedSocket) {.async.} =
   of AMQP_CONNECTION_BLOCKED_SUBMETHOD:
     await dst.encodeShortString(meth.reason)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc newConnectionStart*(major, minor: uint8, serverprops: FieldTable, mechanisms, locales: string): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionStart*(major, minor: uint8, serverprops: FieldTable, mechanisms, locales: string): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_START_SUBMETHOD, 
     versionMajor: major,
     versionMinor: minor,
@@ -221,8 +226,9 @@ proc newConnectionStart*(major, minor: uint8, serverprops: FieldTable, mechanism
     locales: locales
   )
 
-proc newConnectionStartOk*(clientProps: FieldTable, mechanism="PLAIN", response="", locale="en_US"): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionStartOk*(clientProps: FieldTable, mechanism="PLAIN", response="", locale="en_US"): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_START_OK_SUBMETHOD, 
     clientProps: clientProps, 
     mechanism: mechanism, 
@@ -230,24 +236,27 @@ proc newConnectionStartOk*(clientProps: FieldTable, mechanism="PLAIN", response=
     locale: locale
   )
 
-proc newConnectionTune*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionTune*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_TUNE_SUBMETHOD, 
     channelMax: channelMax, 
     frameMax: frameMax, 
     heartbeat: heartbeat
   )
 
-proc newConnectionTuneOk*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionTuneOk*(channelMax: uint16, frameMax: uint32, heartbeat: uint16): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_TUNE_OK_SUBMETHOD, 
     channelMax: channelMax, 
     frameMax: frameMax, 
     heartbeat: heartbeat
   )
 
-proc newConnectionOpen*(virtualHost: string, caps: string, insist: bool): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionOpen*(virtualHost: string, caps: string, insist: bool): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_OPEN_SUBMETHOD, 
     virtualHost: virtualHost, 
     capabilities: caps,
@@ -256,14 +265,16 @@ proc newConnectionOpen*(virtualHost: string, caps: string, insist: bool): AMQPCo
     )
   )
 
-proc newConnectionOpenOk*(knownHosts: string): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionOpenOk*(knownHosts: string): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_OPEN_OK_SUBMETHOD, 
     knownHosts: knownHosts
   )
 
-proc newConnectionClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPConnection =
-  result = AMQPConnection(
+
+proc newConnectionClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_CLOSE_SUBMETHOD,
     replyCode: replyCode,
     replyText: replyText,
@@ -271,26 +282,31 @@ proc newConnectionClose*(replyCode: uint16, replyText: string, classId: uint16, 
     methodId: methodId
   )
 
-proc newConnectionCloseOk*(): AMQPConnection =
-  result = AMQPConnection(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
 
-proc newConnectionBlocked*(reason: string): AMQPConnection =
-  result = AMQPConnection(
+proc newConnectionCloseOk*(): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(kind: AMQP_CONNECTION_CLOSE_OK_SUBMETHOD)
+
+
+proc newConnectionBlocked*(reason: string): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(
     kind: AMQP_CONNECTION_BLOCKED_SUBMETHOD,
     reason: reason
   )
 
-proc newConnectionUnblocked*(): AMQPConnection =
-  result = AMQPConnection(kind: AMQP_CONNECTION_UNBLOCKED_SUBMETHOD)
 
-proc insist*(self: AMQPConnection): bool =
+proc newConnectionUnblocked*(): AMQPConnectionMethod =
+  result = AMQPConnectionMethod(kind: AMQP_CONNECTION_UNBLOCKED_SUBMETHOD)
+
+
+proc insist*(self: AMQPConnectionMethod): bool =
   case self.kind
   of AMQP_CONNECTION_OPEN_SUBMETHOD:
     result = self.openFlags.insist
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `insist=`*(self: AMQPConnection, insist: bool) =
+
+proc `insist=`*(self: AMQPConnectionMethod, insist: bool) =
   case self.kind
   of AMQP_CONNECTION_OPEN_SUBMETHOD:
     self.openFlags.insist = insist

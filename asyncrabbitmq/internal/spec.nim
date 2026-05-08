@@ -6,20 +6,25 @@ const
   FRAME_HEADER_SIZE* = 7
   DECIMAL_VAL_LENGTH* = 5
   AMQP_FRAME_MAX* = 1024*131
-  #AMQP_FRAME_MAX* = 1024
   AMQP_CHANNELS_MAX* = 65535.uint16
   DEFAULT_POOLSIZE* = 5
+  DEFAULT_USER* = "guest"
+  DEFAULT_PASSWORD* = "guest"
+
 
 let DEFAULT_PORTS* = {
   "amqp": 5672,
   "amqps": 5671,
 }.toTable()
 
-const PRODUCT* = "rabbitmq.nim"
-const PLATFORM* = "Nim " & NimVersion
-const RMQVERSION* = "0.1"
-const AUTHOR* = "Vladimir Berezenko <qmaster2000@gmail.com>"
-const INFORMATION* = "See https://github.com/Q-Master/rabbitmq.nim"
+
+const
+  PRODUCT* = "rabbitmq.nim"
+  PLATFORM* = "Nim " & NimVersion
+  RMQVERSION* = "0.2"
+  AUTHOR* = "Vladimir Berezenko <qmaster2000@gmail.com>"
+  INFORMATION* = "See https://github.com/Q-Master/rabbitmq.nim"
+
 
 type
   AMQP_CODES* = enum

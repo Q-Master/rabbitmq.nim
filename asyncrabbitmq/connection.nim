@@ -1,26 +1,27 @@
 import std/[asyncdispatch, times, tables, random, net]
 import pkg/networkutils/buffered_socket
-import ./internal/[address, frame, field, exceptions, spec, auth, properties]
+import ./internal/[address, frame, field, exceptions, spec, auth]
 import ./internal/methods/all
-import ./message
-import ./consumertag
+import ./[message, consumertag]
+
 
 export address
+
 
 const
   DEFAULT_POOLSIZE = 5
   DEFAULT_NET_TIMEOUT = 500
 
+
 type
-  RabbitMQ* = ref RabbitMQObj
-  RabbitMQObj* = object
+  RabbitMQ* = ref object
     pool: seq[RabbitMQConn]
     current: int
     hosts: RMQAddresses
     closing: bool
 
   RabbitMQConn = ref RabbitMQConnObj
-  RabbitMQConnObj = object of RootObj
+  RabbitMQConnObj = object
     inuse: bool
     authenticated: bool
     connected: bool
@@ -29,14 +30,13 @@ type
     channelMax: uint16
     frameMax: uint32
     heartbeat: uint16
-    channels: Table[uint16, Channel]
+    channels: Table[uint16, AMQPChannel]
     timeout: int
     consumer: Future[void]
     retFuture: Future[AMQPMethod]
     blocked: bool
   
-  Channel* = ref ChannelObj
-  ChannelObj* = object of RootObj
+  AMQPChannel* = ref object
     connection: RabbitMQConn
     channelId*: uint16
     opened: bool
@@ -48,10 +48,10 @@ type
     onReturn: proc(msg: Message): Future[void]
     flowWaiters: seq[Future[void]]
   
-  Payload* = ref PayloadObj
-  PayloadObj* = object of RootObj
+  Payload* = ref object
     meth*: AMQPMethod
     msg*: Message
+
 
 proc acquire(pool: RabbitMQ): Future[RabbitMQConn] {.async.}
 proc release(conn: RabbitMQConn)
@@ -65,15 +65,20 @@ proc closeOkConnection(conn: RabbitMQConn) {.async.}
 proc nextChannel(conn: RabbitMQConn): uint16
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.}
 proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, payload: Message = nil) {.async, gcsafe.}
-proc waitMethods(conn: RabbitMQConn, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.}
+proc waitMethods(conn: RabbitMQConn, expectedMethods: seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc consume(conn: RabbitMQConn) {.async.}
-proc onClose(ch: Channel) {.async.}
-proc onFrame(ch: Channel, frame: Frame) {.async.}
-proc onDeliverReturn(ch: Channel) {.async.}
-proc onFlow(ch: Channel, active: bool) {.async.}
-proc processFlowWaiters(channel: Channel)
-proc cancelFlowWaiters(channel: Channel)
+proc onClose(ch: AMQPChannel) {.async.}
+proc onFrame(ch: AMQPChannel, frame: Frame) {.async.}
+proc onDeliverReturn(ch: AMQPChannel) {.async.}
+proc onFlow(ch: AMQPChannel, active: bool) {.async.}
+proc processFlowWaiters(channel: AMQPChannel)
+proc cancelFlowWaiters(channel: AMQPChannel)
+proc closeGracefully(channel: AMQPChannel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.}
+
+
+proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.}
+
 
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
@@ -83,6 +88,7 @@ proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): Ra
   result.hosts = addresses
   randomize()
 
+
 proc newRabbitMQ*(address: RMQAddress, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   let addrs = RMQAddresses()
   addrs.addresses.add(address)
@@ -90,15 +96,18 @@ proc newRabbitMQ*(address: RMQAddress, poolsize: int = DEFAULT_POOLSIZE): Rabbit
   addrs.order = RMQ_CONNECTION_DIRECT
   result = newRabbitMQ(addrs, poolsize)
 
-proc connect*(pool: RabbitMQ) {.async.} =
+
+proc connect*(pool: RabbitMQ): Future[AMQPChannel] {.async.} =
   for i in 0 ..< pool.pool.len:
     template conn: untyped = pool.pool[i]
     if conn.isNil:
       conn = newRabbitMQConn(DEFAULT_NET_TIMEOUT)
       let adr = pool.hosts.next()
       await conn.connect(adr)
+  result = await pool.openChannel()
 
-proc close*(pool: RabbitMQ) {.async.}=
+
+proc close*(pool: RabbitMQ) {.async.} =
   pool.closing = true
   var closed: bool = false
   while not closed:
@@ -109,15 +118,17 @@ proc close*(pool: RabbitMQ) {.async.}=
         await s.disconnect()
     await sleepAsync(200)
 
+
 # --- Payload
 
 proc newPayload*(meth: AMQPMethod, msg: Message): Payload =
   result = Payload(meth: meth, msg: msg)
 
-# ---  Channel
 
-proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
-  result = Channel(
+# ---  AMQPChannel
+
+proc newChannel*(connection: RabbitMQConn, channelId: uint16): AMQPChannel =
+  result = AMQPChannel(
     connection: connection,
     channelId: channelId,
     opened: false,
@@ -129,21 +140,27 @@ proc newChannel*(connection: RabbitMQConn, channelId: uint16): Channel =
   )
   result.resultFuture.complete() # needed to RPC to work at first time. dirty hack because of non-nullable futurevar
 
-proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[Payload] =
+
+proc rpc*(ch: AMQPChannel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[Payload] =
   let wasOpened = ch.opened
   let retFuture = Future[Payload](ch.resultFuture)
   var sendFuture = newFuture[void]("Send data")
+  var busyCounter: int = 0
   proc busyWaiter(fut: Future[bool] = nil) {.gcsafe.} =
     var success: bool = true
     if not fut.isNil:
       if fut.failed:
         retFuture.fail(fut.readError())
+        return
       else:
-        #TODO check if too long waiting
         success = fut.read
+        if not success and busyCounter > 1:
+          retFuture.fail(newException(RMQConnectionFailed, "Failed to send data to RabbitMQ. Queue stuck."))
+          return
     if not ch.opened and wasOpened:
-      retFuture.fail(newAMQPException(AMQPChannelClosed, "Channel closed unexpectedly", 200))
-    if ch.resultFuture.finished and success:
+      retFuture.fail(newAMQPException(AMQPChannelError, "AMQPChannel closed unexpectedly", 504))
+      return
+    if ch.resultFuture.finished:
       ch.resultFuture.clean()
       ch.expectedMethods = expectedMethods
       sendFuture = ch.connection.sendMethod(meth, ch.channelId, payload)
@@ -157,10 +174,12 @@ proc rpc*(ch: Channel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods],
     else:
       var timeoutFuture = retFuture.withTimeout(ch.connection.timeout)
       timeoutFuture.callback = busyWaiter
+      busyCounter.inc()
   busyWaiter()
   return retFuture
 
-proc openChannel*(pool: RabbitMQ): Future[Channel] {.async.} =
+
+proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.} =
   let conn = await pool.acquire()
   let chId = conn.nextChannel()
   result = conn.newChannel(chId)
@@ -175,36 +194,41 @@ proc openChannel*(pool: RabbitMQ): Future[Channel] {.async.} =
   finally:
     conn.release()
 
-proc close*(channel: Channel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
-  if channel.connection.channels.hasKey(channel.channelId):
-    let res {.used.} = await channel.rpc(newChannelCloseMethod(ord(kind).uint16, $kind, 0, 0,), @[AMQP_CHANNEL_CLOSE_OK_METHOD])
-    channel.connection.channels.del(channel.channelId)
-    channel.opened = false
-    channel.cancelFlowWaiters()
-  else:
-    raise newException(AMQPChannelError, "Channel is already freed")
 
-proc flow*(channel: Channel, active: bool) {.async.} =
+proc close*(channel: AMQPChannel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
+  if channel.connection.channels.hasKey(channel.channelId):
+    await channel.closeGracefully(kind)
+    channel.connection.channels.del(channel.channelId)
+
+
+proc flow*(channel: AMQPChannel, active: bool) {.async.} =
   let res = await channel.rpc(newChannelFlowMethod(active), @[AMQP_CHANNEL_FLOW_OK_METHOD])
   channel.active = res.meth.channelObj.active
   if channel.active:
     channel.processFlowWaiters()
 
-proc addOnFlow*(channel: Channel, fut: Future[void]) =
+
+proc addOnFlow*(channel: AMQPChannel, fut: Future[void]) =
   channel.flowWaiters.add(fut)
 
-proc active*(channel: Channel): bool = channel.active
 
-proc blocked*(channel: Channel): bool = channel.connection.blocked
+proc active*(channel: AMQPChannel): bool = channel.active
 
-proc addConsumer*(ch: Channel, consumer: ConsumerTag) =
+
+proc blocked*(channel: AMQPChannel): bool = channel.connection.blocked
+
+
+proc addConsumer*(ch: AMQPChannel, consumer: ConsumerTag) =
   ch.consumers[consumer.id] = consumer
 
-proc removeConsumer*(ch: Channel, consumer: ConsumerTag) =
+
+proc removeConsumer*(ch: AMQPChannel, consumer: ConsumerTag) =
   ch.consumers.del(consumer.id)
 
-proc `onReturn=`*(ch: Channel, cb: proc(msg: Message): Future[void]) =
+
+proc `onReturn=`*(ch: AMQPChannel, cb: proc(msg: Message): Future[void]) =
   ch.onReturn = cb
+
 
 # -- pvt RMQ
 
@@ -227,14 +251,20 @@ proc acquire(pool: RabbitMQ): Future[RabbitMQConn] {.async.} =
     if pool.current == 0:
       await sleepAsync(100)
 
+
 proc release(conn: RabbitMQConn) =
   conn.inuse = false
+
 
 proc `=destroy`(conn: var RabbitMQConnObj) =
   if conn.connected:
     let r = RabbitMQConn.new
     r[] = conn
-    waitFor(r.disconnect())
+    try:
+      waitFor(r.disconnect())
+    except Exception:
+      discard
+
 
 proc newRabbitMQConn(timeout: int): RabbitMQConn =
   result.new()
@@ -249,6 +279,7 @@ proc newRabbitMQConn(timeout: int): RabbitMQConn =
   result.frameMax = AMQP_FRAME_MAX
   result.heartbeat = 0
   result.blocked = false
+
 
 proc connect(conn: RabbitMQConn, adr: RMQAddress) {.async.} =
   if not conn.connected:
@@ -268,11 +299,14 @@ proc connect(conn: RabbitMQConn, adr: RMQAddress) {.async.} =
       conn.connected = false
       raise newException(RMQConnectionFailed, "Timeout connecting to RabbitMQ")
 
+
 proc disconnect(conn: RabbitMQConn, fromClose: bool = false) {.async.} =
   if conn.connected:
     if conn.authenticated:
       for v in conn.channels.values:
         await v.onClose()
+        if not fromClose:
+          await v.closeGracefully()
       if fromClose:
         await conn.closeOkConnection()
       else:
@@ -285,19 +319,22 @@ proc disconnect(conn: RabbitMQConn, fromClose: bool = false) {.async.} =
   conn.inuse = false
   conn.authenticated = false
 
-const
-  AMQP_REPLY_CODE = 200
+
+const AMQP_REPLY_CODE = 200
+
 
 proc closeConnection(conn: RabbitMQConn) {.async.} =
   let closeOk {.used.} = await conn.syncRPC0(newConnectionCloseMethod(AMQP_REPLY_CODE, $AMQP_REPLY_CODE, 0, 0), @[AMQP_CONNECTION_CLOSE_OK_METHOD])
 
+
 proc closeOkConnection(conn: RabbitMQConn) {.async.} =
   await conn.sendMethod(newConnectionCloseOkMethod(), 0)
+
 
 proc nextChannel(conn: RabbitMQConn): uint16 =
   let limit = (if conn.channelMax > 0: conn.channelMax else: AMQP_CHANNELS_MAX).int
   if conn.channels.len >= limit:
-    raise newAMQPException(AMQPChannelsExhausted, "Channels are out", limit)
+    raise newException(RMQChannelsExhausted, "Channels are out of limit: " & $limit)
   for num in 1.uint16..(conn.channels.len+1).uint16:
     if conn.channels.hasKey(num):
       continue
@@ -305,6 +342,7 @@ proc nextChannel(conn: RabbitMQConn): uint16 =
       return num
   let num = (conn.channels.len+1).uint16
   return num
+
 
 proc readFrame(conn: RabbitMQConn): Future[Frame] {.async.} =
   result = await conn.sock.decodeFrame()
@@ -314,39 +352,37 @@ proc readFrame(conn: RabbitMQConn): Future[Frame] {.async.} =
     if result.meth.methodId == CHANNEL_CLOSE_METHOD_ID:
       raiseException(result.meth.channelObj.replyCode)
 
-proc waitMethods(conn: RabbitMQConn, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.} =
+
+proc waitMethods(conn: RabbitMQConn, expectedMethods: seq[AMQPMethods]): Future[AMQPMethod] {.async.} =
   let frame = await conn.readFrame()
   if frame.frameType == ftMethod:
     if frame.meth.idToAMQPMethod() notin expectedMethods:
-      raise newException(AMQPUnexpectedMethod, "Method " & $frame.meth.methodId & " is unexpected")
+      raise newException(RMQUnexpectedMethod, "Method " & $frame.meth.methodId & " is unexpected")
     result = frame.meth
   else:
     raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
 
+
 proc waitMethod(conn: RabbitMQConn, expectedMethod: AMQPMethods): Future[AMQPMethod] =
   result = conn.waitMethods(@[expectedMethod])
 
-proc sendHeader(conn: RabbitMQConn, channel: uint16 = 0, bodySize: uint64, props: Properties) {.async.} =
-  let frame = newHeaderFrame(channel, bodySize, props)
-  await conn.sock.encodeFrame(frame)
-
-proc sendBody(conn: RabbitMQConn, channel: uint16 = 0, payload: Message) {.async.} =
-  var bLen = payload.data.len
-  var start = 0
-  while bLen > 0:
-    let chunkSize = if bLen > conn.frameMax.int: conn.frameMax.int else: bLen
-    let frame = newBodyFrame(channel, chunkSize)
-    copyMem(frame.fragment[0].addr, payload.data[start].addr, chunkSize)
-    await conn.sock.encodeFrame(frame)
-    start.inc(chunkSize)
-    bLen.dec(chunkSize)
 
 proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, payload: Message = nil) {.async.} =
   let frame = newMethodFrame(channel, meth)
   await conn.sock.encodeFrame(frame)
   if not payload.isNil:
-    await conn.sendHeader(channel, payload.data.len.uint64, payload.props)
-    await conn.sendBody(channel, payload)
+    let frame = newHeaderFrame(channel, payload.data.len.uint64, payload.props)
+    await conn.sock.encodeFrame(frame)
+    var bLen = payload.data.len
+    var start = 0
+    while bLen > 0:
+      let chunkSize = if bLen > conn.frameMax.int: conn.frameMax.int else: bLen
+      let frame = newBodyFrame(channel, chunkSize)
+      copyMem(frame.fragment[0].addr, payload.data[start].addr, chunkSize)
+      await conn.sock.encodeFrame(frame)
+      start.inc(chunkSize)
+      bLen.dec(chunkSize)
+
 
 proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   let header = newProtocolHeaderFrame(PROTOCOL_VERSION[0], PROTOCOL_VERSION[1], PROTOCOL_VERSION[2])
@@ -397,9 +433,11 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
   if openOkOrClose.methodId == CONNECTION_CLOSE_METHOD_ID:
     raise newException(RMQConnectionClosed, "Connection closed unexpectedly")
   conn.authenticated = true
+
   
 proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] =
   conn.retFuture = newFuture[AMQPMethod]("syncRPC0")
+
   proc send() {.async.} =
     await conn.sendMethod(meth, 0)
   
@@ -411,9 +449,9 @@ proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AM
       elif frame.meth.methodId == CONNECTION_CLOSE_METHOD_ID:
         await conn.disconnect(fromClose=true)
       else:  
-        raise newAMQPException(AMQPUnexpectedMethod, "Unexpected method", frame.meth.methodId.int)
+        raise newException(RMQUnexpectedMethod, "Unexpected method: " & $frame.meth.methodId.int)
     else:
-      raise newAMQPException(AMQPUnexpectedFrame, "Unexpected frame", frame.frameType.int)
+      raise newException(AMQPUnexpectedFrame, "Unexpected frame: " & $frame.frameType.int)
   
   proc both(): Future[AMQPMethod] {.async.} =
     await send()
@@ -432,6 +470,7 @@ proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AM
           conn.retFuture.complete(res.read())
   return conn.retFuture
 
+
 proc consume(conn: RabbitMQConn) {.async.} =
   while conn.connected:
     var frame: Frame
@@ -444,25 +483,26 @@ proc consume(conn: RabbitMQConn) {.async.} =
       of ftMethod:
         let methId = frame.meth.idToAMQPMethod
         if methId == AMQP_CONNECTION_CLOSE_METHOD:
-          echo "CLOSING: ", frame.meth.connObj.replyText
           await conn.disconnect(fromClose=true)
           break
         if methId == AMQP_CONNECTION_BLOCKED_METHOD or methId == AMQP_CONNECTION_UNBLOCKED_METHOD:
           conn.onBlocked(methId == AMQP_CONNECTION_BLOCKED_METHOD)
           continue
         if conn.retFuture.isNil or conn.retFuture.finished:
-          raise newAMQPException(AMQPUnexpectedMethod, "Unexpected method", frame.meth.methodId.int)
+          raise newException(RMQUnexpectedMethod, "Unexpected method: " & $frame.meth.methodId.int)
         else:
           conn.retFuture.complete(frame.meth)
       of ftHeartBeat:
-        echo "HeartBeat"
+        #echo "HeartBeat"
+        discard
       else:
         discard
     else:
       if conn.channels.hasKey(frame.channelNum):
         asyncCheck conn.channels[frame.channelNum].onFrame(frame)
       else:
-        raise newAMQPException(AMQPNoSuchChannel, "Channel doesn't exist or is closing", frame.channelNum.int)
+        raise newException(RMQPNoSuchChannel, "AMQPChannel " & $frame.channelNum.int & " doesn't exist or is closing")
+
 
 proc onBlocked(conn: RabbitMQConn, blocked: bool) =
   conn.blocked = blocked
@@ -471,9 +511,10 @@ proc onBlocked(conn: RabbitMQConn, blocked: bool) =
       if ch.active:
         ch.processFlowWaiters()
 
-# -- pvt Channel
 
-proc onFrame(ch: Channel, frame: Frame) {.async.} =
+# -- pvt AMQPChannel
+
+proc onFrame(ch: AMQPChannel, frame: Frame) {.async.} =
   template fut: untyped = Future[Payload](ch.resultFuture)
   #echo "Got frame: " & $frame.frameType
   case frame.frameType
@@ -494,7 +535,7 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
     elif ch.expectedMethods.len == 0:
       ch.resultFuture.complete(nil)
     elif methEnum notin ch.expectedMethods:
-      fut.fail(newException(AMQPUnexpectedMethod, "Method " & $methEnum & " is unexpected"))
+      fut.fail(newException(RMQUnexpectedMethod, "Method " & $methEnum & " is unexpected"))
     else:
       if methEnum == AMQP_BASIC_GET_OK_METHOD:
         ch.resultFuture.mget() = newPayload(frame.meth, newMessage())
@@ -526,15 +567,16 @@ proc onFrame(ch: Channel, frame: Frame) {.async.} =
   else:
     fut.fail(newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected"))
 
-proc onClose(ch: Channel) {.async.} =
-  #TODO need to cancel all the consumers and stop them
+
+proc onClose(ch: AMQPChannel) {.async.} =
   template fut: untyped = Future[Payload](ch.resultFuture)
-  echo "Channel " & $ch.channelId & " closing"
+  #echo "AMQPChannel " & $ch.channelId & " closing"
   if not ch.resultFuture.finished:
-    fut.fail(newAMQPException(AMQPChannelClosed, "Channel is closing", 503))
+    fut.fail(newAMQPException(AMQPChannelError, "AMQPChannel is closing", 504))
   ch.cancelFlowWaiters()
 
-proc onDeliverReturn(ch: Channel) {.async.} =
+
+proc onDeliverReturn(ch: AMQPChannel) {.async.} =
   case ch.dataFrame.meth.idToAMQPMethod
   of AMQP_BASIC_DELIVER_METHOD:
     let ct = ch.dataFrame.meth.basicObj.consumerTag()
@@ -544,8 +586,7 @@ proc onDeliverReturn(ch: Channel) {.async.} =
     if consumerTag.onDeliver.isNil:
       return
     let basicMethod = ch.dataFrame.meth.basicObj
-    let env = newEnvelope(consumerTag, basicMethod.deliveryTag, basicMethod.exchange, basicMethod.routingKey, ch.dataFrame.msg, basicMethod.redelivered)
-    asyncCheck consumerTag.onDeliver(env)
+    asyncCheck consumerTag.call(basicMethod.deliveryTag, basicMethod.exchange, basicMethod.routingKey, ch.dataFrame.msg, basicMethod.redelivered)
   of AMQP_BASIC_RETURN_METHOD:
     if ch.onReturn.isNil:
       return
@@ -554,7 +595,8 @@ proc onDeliverReturn(ch: Channel) {.async.} =
     discard
   ch.dataFrame = nil
 
-proc onFlow(ch: Channel, active: bool) {.async.} =
+
+proc onFlow(ch: AMQPChannel, active: bool) {.async.} =
   ch.active = active
   let res {.used.} = await ch.rpc(
     newChannelFlowOkMethod(active), @[]
@@ -562,14 +604,23 @@ proc onFlow(ch: Channel, active: bool) {.async.} =
   if active:
     ch.processFlowWaiters()
 
-proc processFlowWaiters(channel: Channel) =
+
+proc processFlowWaiters(channel: AMQPChannel) =
   let flowWaitersCopy = channel.flowWaiters
   channel.flowWaiters = @[]
   for fut in flowWaitersCopy:
     fut.complete()
 
-proc cancelFlowWaiters(channel: Channel) =
+
+proc cancelFlowWaiters(channel: AMQPChannel) =
   let flowWaitersCopy = channel.flowWaiters
   channel.flowWaiters = @[]
   for fut in flowWaitersCopy:
-    fut.fail(newException(AMQPChannelClosed, "Channel is closing"))
+    fut.fail(newAMQPException(AMQPChannelError, "AMQPChannel is closing", 504))
+
+
+proc closeGracefully(channel: AMQPChannel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
+  if channel.connection.channels.hasKey(channel.channelId):
+    let res {.used.} = await channel.rpc(newChannelCloseMethod(ord(kind).uint16, $kind, 0, 0,), @[AMQP_CHANNEL_CLOSE_OK_METHOD])
+    channel.opened = false
+    channel.cancelFlowWaiters()

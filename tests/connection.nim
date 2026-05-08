@@ -6,11 +6,11 @@ suite "RabbitMQ connection":
     discard
 
   test "Simple connect/disconnect":
-    proc testConnection() {.async} =
+    proc testConnection() {.async.} =
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
+        let chn {.used.} = await connection.connect()
       except RMQConnectionFailed:
         checkpoint "Can't connect to Redis instance"
         fail()

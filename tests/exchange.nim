@@ -6,20 +6,17 @@ suite "RabbitMQ exchange":
     discard
 
   test "Exchange declare/delete":
-    proc testChannelCreation() {.async} =
+    proc testChannelCreation() {.async.} =
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
         checkpoint "Allocating channel"
-        let chan = await connection.openChannel()
+        let chan = await connection.connect()
         checkpoint "Creating exchange"
         let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT)
         check exchange.id == "testExchange"
         checkpoint "Deleting the exchange"
         await exchange.delete()
-        checkpoint "Closing the channel"
-        await chan.close()
       except RMQConnectionFailed:
         checkpoint "Can't connect to RabbitMQ instance"
         fail()

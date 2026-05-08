@@ -1,9 +1,8 @@
 import std/[asyncdispatch, strutils]
 import pkg/networkutils/buffered_socket
-import ./spec
-import ./exceptions
-import ./methods/all
-import ./properties
+import ./[spec, exceptions, properties]
+from ./methods/all import AMQPMethod, len, decodeMethod, encodeMethod
+
 
 const
   FRAME_METHOD = 1.uint8
@@ -11,6 +10,7 @@ const
   FRAME_BODY = 3.uint8
   FRAME_HEARTBEAT = 8.uint8
   FRAME_END = 206.uint8
+
 
 type
   FrameType* = enum
@@ -39,9 +39,11 @@ type
       minor: uint8
       revision: uint8
 
+
 proc newMethodFrame*(channelNum: uint16, meth: AMQPMethod): Frame =
   result = Frame(frameType: ftMethod, channelNum: channelNum, meth: meth)
   result.size = meth.len.uint32
+
 
 proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): Frame =
   result = Frame(
@@ -52,6 +54,7 @@ proc newHeaderFrame*(channelNum: uint16, bodySize: uint64, props: Properties): F
     size: (sizeInt16Uint16+sizeInt16Uint16+sizeInt64Uint64+props.len()).uint32
   )
 
+
 proc newBodyFrame*(channelNum: uint16, fragment: seq[byte]): Frame =
   result = Frame(
     frameType: ftBody,
@@ -59,6 +62,7 @@ proc newBodyFrame*(channelNum: uint16, fragment: seq[byte]): Frame =
     fragment: fragment,
     size: fragment.len().uint32
   )
+
 
 proc newBodyFrame*(channelNum: uint16, size: int): Frame =
   result = Frame(
@@ -68,14 +72,17 @@ proc newBodyFrame*(channelNum: uint16, size: int): Frame =
   )
   result.fragment.setLen(size)
 
+
 proc newHeartBeatFrame*(channelNum: uint16): Frame =
   result = Frame(
     frameType: ftHeartBeat,
     channelNum: channelNum
   )
 
+
 proc newProtocolHeaderFrame*(major = PROTOCOL_VERSION[0], minor = PROTOCOL_VERSION[1], revision = PROTOCOL_VERSION[2] ): Frame =
   result = Frame(frameType: ftProtocolHeader, channelNum: 0, major: major, minor: minor, revision: revision)
+
 
 proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Frame] {.async.} =
   if startFrame:
@@ -104,10 +111,11 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
   of FRAME_HEARTBEAT:
     result = newHeartBeatFrame(chNum)
   else:
-    raise newException(InvalidFieldTypeException, "No such field type")
+    raise newException(KeyError, "Unknown field type: " & $fType)
   let fEnd = await src.readU8()
   if fEnd != FRAME_END:
     raise newException(FrameUnmarshalingException, "Last byte error")
+
 
 proc encodeFrame*(dest: AsyncBufferedSocket, f: Frame) {.async.} =
   if f.frameType == ftProtocolHeader:

@@ -6,16 +6,16 @@ suite "RabbitMQ basic":
   setup:
     discard
 
+
   test "Basic publish":
-    proc testBasicPublish() {.async} =
+    proc testBasicPublish() {.async.} =
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
         checkpoint "Allocating channel"
-        let chan = await connection.openChannel()
+        let chan = await connection.connect()
         checkpoint "Creating exchange"
-        let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT)
+        let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT, autoDelete = true)
         check exchange.id == "testExchange"
         let props = newBasicProperties()
         let headers = {"rpc": "OK"}.asFieldTable()
@@ -25,8 +25,6 @@ suite "RabbitMQ basic":
         await exchange.publish("", msg, mandatory = true)
         checkpoint "Deleting the exchange"
         await exchange.delete()
-        checkpoint "Closing the channel"
-        await chan.close()
       except RMQConnectionFailed:
         checkpoint "Can't connect to RabbitMQ instance"
         fail()
@@ -35,14 +33,14 @@ suite "RabbitMQ basic":
         await connection.close()
     waitFor(testBasicPublish())
   
+
   test "Basic consume":
-    proc testBasicPublish() {.async} =
+    proc testBasicPublish() {.async.} =
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
         checkpoint "Allocating channel"
-        let chan = await connection.openChannel()
+        let chan = await connection.connect()
         checkpoint "Creating exchange"
         let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT, autoDelete = true)
         check exchange.id == "testExchange"
@@ -52,8 +50,6 @@ suite "RabbitMQ basic":
         props.correlationId="The best correlation ID I've ever met"
         let msg = newMessage(message, props)
         await exchange.publish("testKey", msg, mandatory = true)
-        checkpoint "Closing the channel"
-        await chan.close()
       except RMQConnectionFailed:
         checkpoint "Can't connect to RabbitMQ instance"
         fail()
@@ -64,7 +60,7 @@ suite "RabbitMQ basic":
     proc testBasicConsume() {.async.} =
       var ct: string
       var resfut = newFuture[void]("Awaiting for result to check")
-      proc onDeliverCB(env: Envelope) {.async.} =
+      proc onDeliverCB(env: Envelope, noAck: bool) {.async.} =
         checkpoint "Verifying the message"
         check env.consumerTag == ct
         check env.exchange == "testExchange"
@@ -76,27 +72,23 @@ suite "RabbitMQ basic":
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
         checkpoint "Allocating channel"
-        let chan = await connection.openChannel()
+        let chan = await connection.connect()
         checkpoint "Creating exchange"
         let exchange = await chan.exchangeDeclare("testExchange", EXCHANGE_DIRECT, autoDelete = true)
         check exchange.id == "testExchange"
         checkpoint "Creating queue"
-        let q = await chan.queueDeclare("testQueue", autoDelete = true)
+        let q = await chan.queueDeclare("testQueue", autoDelete=true, exclusive=true)
         check q.id == "testQueue"
         checkpoint "Binding the queue"
         let success = await q.queueBind(exchange, routingKey="testKey")
         check success == true
-        var consumerTag = await q.consume()
+        var consumerTag = await q.consume(onDeliverCB)
         ct = consumerTag.id
-        consumerTag.onDeliver = onDeliverCB
         await resfut
         checkpoint "Cancelling the consumer"
         let ct1 = await chan.cancel(consumerTag)
         check ct1.id == consumerTag.id
-        checkpoint "Closing the channel"
-        await chan.close()
       except RMQConnectionFailed:
         checkpoint "Can't connect to RabbitMQ instance"
         fail()
@@ -113,8 +105,9 @@ suite "RabbitMQ basic":
 
     waitFor(testBasicPublishConsume())
 
+
   test "Basic return":
-    proc testBasicReturn() {.async} =
+    proc testBasicReturn() {.async.} =
       var resfut = newFuture[void]("Awaiting for result to check")
       proc onReturnCB(msg: Message) {.async.} =
         checkpoint "Verifying the message"
@@ -126,9 +119,8 @@ suite "RabbitMQ basic":
       var address = "amqp://guest:guest@localhost/".fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
-        await connection.connect()
         checkpoint "Allocating channel"
-        let chan = await connection.openChannel()
+        let chan = await connection.connect()
         checkpoint "Setting onReturn callback"
         chan.onReturn = onReturnCB
         checkpoint "Creating exchange"
@@ -141,8 +133,6 @@ suite "RabbitMQ basic":
         let msg = newMessage(message, props)
         await exchange.publish("testKey", msg, mandatory = true)
         await resfut
-        checkpoint "Closing the channel"
-        await chan.close()
       except RMQConnectionFailed:
         checkpoint "Can't connect to RabbitMQ instance"
         fail()

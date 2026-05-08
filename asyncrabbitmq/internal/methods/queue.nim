@@ -1,28 +1,22 @@
-#[
-Class Grammar:
-    queue = C:DECLARE  S:DECLARE-OK
-          / C:BIND     S:BIND-OK
-          / C:UNBIND   S:UNBIND-OK
-          / C:PURGE    S:PURGE-OK
-          / C:DELETE   S:DELETE-OK
-]#
-
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field
-import ../exceptions
 
-const QUEUE_METHODS* = 0x0032.uint16
-const QUEUE_DECLARE_METHOD_ID* = 0x0032000A.uint32
-const QUEUE_DECLARE_OK_METHOD_ID* = 0x0032000B.uint32
-const QUEUE_BIND_METHOD_ID* = 0x00320014.uint32
-const QUEUE_BIND_OK_METHOD_ID* = 0x00320015.uint32
-const QUEUE_PURGE_METHOD_ID* = 0x0032001E.uint32
-const QUEUE_PURGE_OK_METHOD_ID* = 0x0032001F.uint32
-const QUEUE_DELETE_METHOD_ID* = 0x00320028.uint32
-const QUEUE_DELETE_OK_METHOD_ID* = 0x00320029.uint32
-const QUEUE_UNBIND_METHOD_ID* = 0x00320032.uint32
-const QUEUE_UNBIND_OK_METHOD_ID* = 0x00320033.uint32
+
+const
+  QUEUE_METHODS* = 0x0032.uint16
+
+  QUEUE_DECLARE_METHOD_ID* = 0x0032000A.uint32
+  QUEUE_DECLARE_OK_METHOD_ID* = 0x0032000B.uint32
+  QUEUE_BIND_METHOD_ID* = 0x00320014.uint32
+  QUEUE_BIND_OK_METHOD_ID* = 0x00320015.uint32
+  QUEUE_PURGE_METHOD_ID* = 0x0032001E.uint32
+  QUEUE_PURGE_OK_METHOD_ID* = 0x0032001F.uint32
+  QUEUE_DELETE_METHOD_ID* = 0x00320028.uint32
+  QUEUE_DELETE_OK_METHOD_ID* = 0x00320029.uint32
+  QUEUE_UNBIND_METHOD_ID* = 0x00320032.uint32
+  QUEUE_UNBIND_OK_METHOD_ID* = 0x00320033.uint32
+
 
 {. push warning[ProveField]:on .}
 
@@ -86,8 +80,15 @@ type
   AMQPQueueDeleteObj = object of AMQPQueueQueueObj
     flags: AMQPQueueDeleteBits
 
-  AMQPQueue* = ref AMQPQueueObj
-  AMQPQueueObj* = object of RootObj
+  AMQPQueueMethod* = ref AMQPQueueMethodObj
+    ## Class Grammar:
+    ##   queue = C:DECLARE  S:DECLARE-OK
+    ##         / C:BIND     S:BIND-OK
+    ##         / C:UNBIND   S:UNBIND-OK
+    ##         / C:PURGE    S:PURGE-OK
+    ##         / C:DELETE   S:DELETE-OK
+
+  AMQPQueueMethodObj* = object of RootObj
     case kind*: AMQPQueueKind
     of AMQP_QUEUE_DECLARE_SUBMETHOD:
       declare: AMQPQueueDeclareObj
@@ -108,7 +109,8 @@ type
     else:
       discard
 
-proc len*(meth: AMQPQueue): int =
+
+proc len*(meth: AMQPQueueMethod): int =
   result = 0
   case meth.kind:
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
@@ -145,23 +147,24 @@ proc len*(meth: AMQPQueue): int =
   of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
     result.inc(0)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[AMQPQueue] {.async.} =
+
+proc decode*(_: typedesc[AMQPQueueMethod], s: AsyncBufferedSocket, t: uint32): Future[AMQPQueueMethod] {.async.} =
   case t:
   of QUEUE_DECLARE_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_DECLARE_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_DECLARE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.declare.queue = await s.decodeShortString()
     result.declare.flags = cast[AMQPQueueDeclareBits](await s.readU8())
     result.declare.args = await s.decodeTable()
   of QUEUE_DECLARE_OK_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_DECLARE_OK_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_DECLARE_OK_SUBMETHOD)
     result.declareOk.queue = await s.decodeShortString()
     result.declareOk.messageCount = await s.readBEU32()
     result.declareOk.consumerCount = await s.readBEU32()
   of QUEUE_BIND_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_BIND_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_BIND_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.qBind.queue = await s.decodeShortString()
     result.qBind.exchange = await s.decodeShortString()
@@ -169,36 +172,37 @@ proc decode*(_: typedesc[AMQPQueue], s: AsyncBufferedSocket, t: uint32): Future[
     result.qBind.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
     result.qBind.args = await s.decodeTable()
   of QUEUE_BIND_OK_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_BIND_OK_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_BIND_OK_SUBMETHOD)
   of QUEUE_PURGE_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_PURGE_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_PURGE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.purge.queue = await s.decodeShortString()
     result.purge.flags = cast[AMQPQueueBindPurgeBits](await s.readU8())
   of QUEUE_PURGE_OK_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD)
     result.purgeOkDeleteOk.messageCount = await s.readBEU32()
   of QUEUE_DELETE_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_DELETE_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_DELETE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.del.queue = await s.decodeShortString()
     result.del.flags = cast[AMQPQueueDeleteBits](await s.readU8())
   of QUEUE_DELETE_OK_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD)
     result.purgeOkDeleteOk.messageCount = await s.readBEU32()
   of QUEUE_UNBIND_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_UNBIND_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.unbind.queue = await s.decodeShortString()
     result.unbind.exchange = await s.decodeShortString()
     result.unbind.routingKey = await s.decodeShortString()
     result.unbind.args = await s.decodeTable()
   of QUEUE_UNBIND_OK_METHOD_ID:
-    result = AMQPQueue(kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD)
+    result = AMQPQueueMethod(kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $t)
 
-proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
+
+proc encode*(meth: AMQPQueueMethod, dst: AsyncBufferedSocket) {.async.} =
   #echo $meth.kind
   case meth.kind:
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
@@ -236,13 +240,13 @@ proc encode*(meth: AMQPQueue, dst: AsyncBufferedSocket) {.async.} =
   of AMQP_QUEUE_BIND_OK_SUBMETHOD, AMQP_QUEUE_UNBIND_OK_SUBMETHOD:
     discard
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
 
 proc newQueueDeclare*(queue: string, 
   passive, durable, exclusive, autoDelete, noWait: bool, 
-  args: FieldTable): AMQPQueue =
-  result = AMQPQueue(
+  args: FieldTable): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_DECLARE_SUBMETHOD, 
     declare: AMQPQueueDeclareObj(
       queue: queue,
@@ -257,8 +261,9 @@ proc newQueueDeclare*(queue: string,
     )
   )
 
-proc newQueueDeclareOk*(queue: string, messageCount, consumerCount: uint32): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueDeclareOk*(queue: string, messageCount, consumerCount: uint32): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_DECLARE_OK_SUBMETHOD, 
     declareOk: AMQPQueueDeclareOkObj(
       queue: queue,
@@ -267,8 +272,9 @@ proc newQueueDeclareOk*(queue: string, messageCount, consumerCount: uint32): AMQ
     )
   )
 
-proc newQueueBind*(queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueBind*(queue, exchange, routingKey: string, noWait: bool, args: FieldTable): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_BIND_SUBMETHOD, 
     qBind: AMQPQueueBindObj(
       queue: queue,
@@ -281,13 +287,15 @@ proc newQueueBind*(queue, exchange, routingKey: string, noWait: bool, args: Fiel
     )
   )
 
-proc newQueueBindOk*(): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueBindOk*(): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_BIND_OK_SUBMETHOD
   )
 
-proc newQueuePurge*(queue: string, noWait: bool): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueuePurge*(queue: string, noWait: bool): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_PURGE_SUBMETHOD, 
     purge: AMQPQueuePurgeObj(
       queue: queue,
@@ -297,16 +305,18 @@ proc newQueuePurge*(queue: string, noWait: bool): AMQPQueue =
     )
   )
 
-proc newQueuePurgeOk*(messageCount: uint32): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueuePurgeOk*(messageCount: uint32): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_PURGE_OK_SUBMETHOD, 
     purgeOkDeleteOk: AMQPQueuePurgeOkDeleteOkObj(
       messageCount: messageCount
     )
   )
 
-proc newQueueDelete*(queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueDelete*(queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_DELETE_SUBMETHOD, 
     del: AMQPQueueDeleteObj(
       queue: queue,
@@ -318,16 +328,18 @@ proc newQueueDelete*(queue: string, ifUnused, ifEmpty, noWait: bool): AMQPQueue 
     )
   )
 
-proc newQueueDeleteOk*(messageCount: uint32): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueDeleteOk*(messageCount: uint32): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_DELETE_OK_SUBMETHOD, 
     purgeOkDeleteOk: AMQPQueuePurgeOkDeleteOkObj(
       messageCount: messageCount
     )
   )
 
-proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_UNBIND_SUBMETHOD, 
     unbind: AMQPQueueUnbindObj(
       queue: queue,
@@ -337,12 +349,14 @@ proc newQueueUnbind*(queue, exchange, routingKey: string, args: FieldTable): AMQ
     )
   )
 
-proc newQueueUnbindOk*(): AMQPQueue =
-  result = AMQPQueue(
+
+proc newQueueUnbindOk*(): AMQPQueueMethod =
+  result = AMQPQueueMethod(
     kind: AMQP_QUEUE_UNBIND_OK_SUBMETHOD
   )
 
-proc queue*(self: AMQPQueue): string =
+
+proc queue*(self: AMQPQueueMethod): string =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.queue
@@ -359,7 +373,8 @@ proc queue*(self: AMQPQueue): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc args*(self: AMQPQueue): FieldTable =
+
+proc args*(self: AMQPQueueMethod): FieldTable =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.args
@@ -370,7 +385,8 @@ proc args*(self: AMQPQueue): FieldTable =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc messageCount*(self: AMQPQueue): uint32 =
+
+proc messageCount*(self: AMQPQueueMethod): uint32 =
   case self.kind
   of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
     result = self.declareOk.messageCount
@@ -379,7 +395,8 @@ proc messageCount*(self: AMQPQueue): uint32 =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc exchange*(self: AMQPQueue): string =
+
+proc exchange*(self: AMQPQueueMethod): string =
   case self.kind
   of AMQP_QUEUE_BIND_SUBMETHOD:
     result = self.qBind.exchange
@@ -388,7 +405,8 @@ proc exchange*(self: AMQPQueue): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc routingKey*(self: AMQPQueue): string =
+
+proc routingKey*(self: AMQPQueueMethod): string =
   case self.kind
   of AMQP_QUEUE_BIND_SUBMETHOD:
     result = self.qBind.routingKey
@@ -397,70 +415,80 @@ proc routingKey*(self: AMQPQueue): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc consumerCount*(self: AMQPQueue): uint32 =
+
+proc consumerCount*(self: AMQPQueueMethod): uint32 =
   case self.kind
   of AMQP_QUEUE_DECLARE_OK_SUBMETHOD:
     result = self.declareOk.consumerCount
   else:
     raise newException(FieldDefect, "No such field")
 
-proc passive*(self: AMQPQueue): bool =
+
+proc passive*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.flags.passive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `passive=`*(self: AMQPQueue, passive: bool) =
+
+proc `passive=`*(self: AMQPQueueMethod, passive: bool) =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     self.declare.flags.passive = passive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc durable*(self: AMQPQueue): bool =
+
+proc durable*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.flags.durable
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `durable=`*(self: AMQPQueue, durable: bool) =
+
+proc `durable=`*(self: AMQPQueueMethod, durable: bool) =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     self.declare.flags.durable = durable
   else:
     raise newException(FieldDefect, "No such field")
 
-proc exclusive*(self: AMQPQueue): bool =
+
+proc exclusive*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.flags.exclusive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `exclusive=`*(self: AMQPQueue, exclusive: bool) =
+
+proc `exclusive=`*(self: AMQPQueueMethod, exclusive: bool) =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     self.declare.flags.exclusive = exclusive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc autoDelete*(self: AMQPQueue): bool =
+
+proc autoDelete*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.flags.autoDelete
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `autoDelete=`*(self: AMQPQueue, autoDelete: bool) =
+
+proc `autoDelete=`*(self: AMQPQueueMethod, autoDelete: bool) =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     self.declare.flags.autoDelete = autoDelete
   else:
     raise newException(FieldDefect, "No such field")
 
-proc noWait*(self: AMQPQueue): bool =
+
+proc noWait*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     result = self.declare.flags.noWait
@@ -473,7 +501,8 @@ proc noWait*(self: AMQPQueue): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noWait=`*(self: AMQPQueue, noWait: bool) =
+
+proc `noWait=`*(self: AMQPQueueMethod, noWait: bool) =
   case self.kind
   of AMQP_QUEUE_DECLARE_SUBMETHOD:
     self.declare.flags.noWait = noWait
@@ -486,28 +515,32 @@ proc `noWait=`*(self: AMQPQueue, noWait: bool) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc ifUnused*(self: AMQPQueue): bool =
+
+proc ifUnused*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DELETE_SUBMETHOD:
     result = self.del.flags.ifUnused
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `ifUnused=`*(self: AMQPQueue, ifUnused: bool) =
+
+proc `ifUnused=`*(self: AMQPQueueMethod, ifUnused: bool) =
   case self.kind
   of AMQP_QUEUE_DELETE_SUBMETHOD:
     self.del.flags.ifUnused = ifUnused
   else:
     raise newException(FieldDefect, "No such field")
 
-proc ifEmpty*(self: AMQPQueue): bool =
+
+proc ifEmpty*(self: AMQPQueueMethod): bool =
   case self.kind
   of AMQP_QUEUE_DELETE_SUBMETHOD:
     result = self.del.flags.ifEmpty
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `ifEmpty=`*(self: AMQPQueue, ifEmpty: bool) =
+
+proc `ifEmpty=`*(self: AMQPQueueMethod, ifEmpty: bool) =
   case self.kind
   of AMQP_QUEUE_DELETE_SUBMETHOD:
     self.del.flags.ifEmpty = ifEmpty

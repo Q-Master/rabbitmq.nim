@@ -1,47 +1,33 @@
-#[
-Class Grammar:
-    basic = C:QOS S:QOS-OK
-          / C:CONSUME S:CONSUME-OK
-          / C:CANCEL S:CANCEL-OK
-          / C:PUBLISH content
-          / S:RETURN content
-          / S:DELIVER content
-          / C:GET ( S:GET-OK content / S:GET-EMPTY )
-          / C:ACK
-          / S:ACK
-          / C:REJECT
-          / C:NACK
-          / S:NACK
-          / C:RECOVER-ASYNC
-          / C:RECOVER S:RECOVER-OK
-]#
-
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field
-import ../exceptions
 
-const BASIC_METHODS* = 0x003C.uint16
-const BASIC_QOS_METHOD_ID* = 0x003C000A.uint32
-const BASIC_QOS_OK_METHOD_ID* = 0x003C000B.uint32
-const BASIC_CONSUME_METHOD_ID* = 0x003C0014.uint32
-const BASIC_CONSUME_OK_METHOD_ID* = 0x003C0015.uint32
-const BASIC_CANCEL_METHOD_ID* = 0x003C001E.uint32
-const BASIC_CANCEL_OK_METHOD_ID* = 0x003C001F.uint32
-const BASIC_PUBLISH_METHOD_ID* = 0x003C0028.uint32
-const BASIC_RETURN_METHOD_ID* = 0x003C0032.uint32
-const BASIC_DELIVER_METHOD_ID* = 0x003C003C.uint32
-const BASIC_GET_METHOD_ID* = 0x003C0046.uint32
-const BASIC_GET_OK_METHOD_ID* = 0x003C0047.uint32
-const BASIC_GET_EMPTY_METHOD_ID* = 0x003C0048.uint32
-const BASIC_ACK_METHOD_ID* = 0x003C0050.uint32
-const BASIC_REJECT_METHOD_ID* = 0x003C005A.uint32
-const BASIC_RECOVER_ASYNC_METHOD_ID* = 0x003C0064.uint32
-const BASIC_RECOVER_METHOD_ID* = 0x003C006E.uint32
-const BASIC_RECOVER_OK_METHOD_ID* = 0x003C006F.uint32
-const BASIC_NACK_METHOD_ID* = 0x003C0078.uint32
+
+const
+  BASIC_METHODS* = 0x003C.uint16
+
+  BASIC_QOS_METHOD_ID* = 0x003C000A.uint32
+  BASIC_QOS_OK_METHOD_ID* = 0x003C000B.uint32
+  BASIC_CONSUME_METHOD_ID* = 0x003C0014.uint32
+  BASIC_CONSUME_OK_METHOD_ID* = 0x003C0015.uint32
+  BASIC_CANCEL_METHOD_ID* = 0x003C001E.uint32
+  BASIC_CANCEL_OK_METHOD_ID* = 0x003C001F.uint32
+  BASIC_PUBLISH_METHOD_ID* = 0x003C0028.uint32
+  BASIC_RETURN_METHOD_ID* = 0x003C0032.uint32
+  BASIC_DELIVER_METHOD_ID* = 0x003C003C.uint32
+  BASIC_GET_METHOD_ID* = 0x003C0046.uint32
+  BASIC_GET_OK_METHOD_ID* = 0x003C0047.uint32
+  BASIC_GET_EMPTY_METHOD_ID* = 0x003C0048.uint32
+  BASIC_ACK_METHOD_ID* = 0x003C0050.uint32
+  BASIC_REJECT_METHOD_ID* = 0x003C005A.uint32
+  BASIC_RECOVER_ASYNC_METHOD_ID* = 0x003C0064.uint32
+  BASIC_RECOVER_METHOD_ID* = 0x003C006E.uint32
+  BASIC_RECOVER_OK_METHOD_ID* = 0x003C006F.uint32
+  BASIC_NACK_METHOD_ID* = 0x003C0078.uint32
+
 
 {. push warning[ProveField]:on .}
+
 
 type
   AMQPBasicKind = enum
@@ -167,8 +153,24 @@ type
   AMQPBasicNackObj = object of AMQPBasicDeliveryTagObj
     flags: AMQPBasicNackBits
   
-  AMQPBasic* = ref AMQPBasicObj
-  AMQPBasicObj* = object of RootObj
+  AMQPBasicMethod* = ref AMQPBasicMethodObj
+    ## Class Grammar:
+    ##   basic = C:QOS S:QOS-OK
+    ##         / C:CONSUME S:CONSUME-OK
+    ##         / C:CANCEL S:CANCEL-OK
+    ##         / C:PUBLISH content
+    ##         / S:RETURN content
+    ##         / S:DELIVER content
+    ##         / C:GET ( S:GET-OK content / S:GET-EMPTY )
+    ##         / C:ACK
+    ##         / S:ACK
+    ##         / C:REJECT
+    ##         / C:NACK
+    ##         / S:NACK
+    ##         / C:RECOVER-ASYNC
+    ##         / C:RECOVER S:RECOVER-OK
+
+  AMQPBasicMethodObj* = object of RootObj
     case kind*: AMQPBasicKind
     of AMQP_BASIC_QOS_SUBMETHOD:
       qos: AMQPBasicQOSObj
@@ -203,7 +205,8 @@ type
     else:
       discard
 
-proc len*(meth: AMQPBasic): int =
+
+proc len*(meth: AMQPBasicMethod): int =
   result = 0
   case meth.kind:
   of AMQP_BASIC_QOS_SUBMETHOD:
@@ -216,13 +219,11 @@ proc len*(meth: AMQPBasic): int =
     result.inc(meth.consume.consumerTag.shortStringLen)
     result.inc(sizeInt8Uint8)
     result.inc(meth.consume.args.len)
-  of AMQP_BASIC_CONSUME_OK_SUBMETHOD:
+  of AMQP_BASIC_CONSUME_OK_SUBMETHOD, AMQP_BASIC_CANCEL_OK_SUBMETHOD:
     result.inc(meth.consumeCancelOk.consumerTag.shortStringLen)
   of AMQP_BASIC_CANCEL_SUBMETHOD:
     result.inc(meth.cancel.consumerTag.shortStringLen)
     result.inc(sizeInt8Uint8)
-  of AMQP_BASIC_CANCEL_OK_SUBMETHOD:
-    result.inc(meth.consumeCancelOk.consumerTag.shortStringLen)
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result.inc(sizeInt16Uint16)
     result.inc(meth.publish.exchange.shortStringLen)
@@ -259,92 +260,94 @@ proc len*(meth: AMQPBasic): int =
   of AMQP_BASIC_NACK_SUBMETHOD:
     result.inc(sizeInt64Uint64+sizeInt8Uint8)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc decode*(_: typedesc[AMQPBasic], s: AsyncBufferedSocket, t: uint32): Future[AMQPBasic] {.async.} =
+
+proc decode*(_: typedesc[AMQPBasicMethod], s: AsyncBufferedSocket, t: uint32): Future[AMQPBasicMethod] {.async.} =
   case t:
   of BASIC_QOS_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_QOS_SUBMETHOD, qos: AMQPBasicQOSObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_QOS_SUBMETHOD, qos: AMQPBasicQOSObj())
     result.qos.prefetchSize = await s.readBEU32()
     result.qos.prefetchCount = await s.readBEU16()
     result.qos.flags = cast[AMQPBasicQOSBits](await s.readU8())
   of BASIC_QOS_OK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_QOS_OK_SUBMETHOD)
+    result = AMQPBasicMethod(kind: AMQP_BASIC_QOS_OK_SUBMETHOD)
   of BASIC_CONSUME_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_CONSUME_SUBMETHOD, consume: AMQPBasicConsumeObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_CONSUME_SUBMETHOD, consume: AMQPBasicConsumeObj())
     let ticket {.used.} = await s.readBEU16()
     result.consume.queue = await s.decodeShortString()
     result.consume.consumerTag = await s.decodeShortString()
     result.consume.flags = cast[AMQPBasicConsumeBits](await s.readU8())
     result.consume.args = await s.decodeTable()
   of BASIC_CONSUME_OK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_CONSUME_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_CONSUME_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
     result.consumeCancelOk.consumerTag = await s.decodeShortString()
   of BASIC_CANCEL_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_CANCEL_SUBMETHOD, cancel: AMQPBasicCancelObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_CANCEL_SUBMETHOD, cancel: AMQPBasicCancelObj())
     result.cancel.consumerTag = await s.decodeShortString()
     result.cancel.flags = cast[AMQPBasicCancelBits](await s.readU8())
   of BASIC_CANCEL_OK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_CANCEL_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_CANCEL_OK_SUBMETHOD, consumeCancelOk: AMQPBasicConsumerTagObj())
     result.consumeCancelOk.consumerTag = await s.decodeShortString()
   of BASIC_PUBLISH_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_PUBLISH_SUBMETHOD, publish: AMQPBasicPublishObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_PUBLISH_SUBMETHOD, publish: AMQPBasicPublishObj())
     let ticket {.used.} = await s.readBEU16()
     result.publish.exchange = await s.decodeShortString()
     result.publish.routingKey = await s.decodeShortString()
     result.publish.flags = cast[AMQPBasicPublishBits](await s.readU8())
   of BASIC_RETURN_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_RETURN_SUBMETHOD, ret: AMQPBasicReturnObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_RETURN_SUBMETHOD, ret: AMQPBasicReturnObj())
     result.ret.replyCode = await s.readBEU16()
     result.ret.replyText = await s.decodeShortString()
     result.ret.exchange = await s.decodeShortString()
     result.ret.routingKey = await s.decodeShortString()
   of BASIC_DELIVER_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_DELIVER_SUBMETHOD, deliver: AMQPBasicDeliverObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_DELIVER_SUBMETHOD, deliver: AMQPBasicDeliverObj())
     result.deliver.consumerTag = await s.decodeShortString()
     result.deliver.deliveryTag = await s.readBEU64()
     result.deliver.flags = cast[AMQPBasicRedeliveredBits](await s.readU8())
     result.deliver.exchange = await s.decodeShortString()
     result.deliver.routingKey = await s.decodeShortString()
   of BASIC_GET_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_GET_SUBMETHOD, get: AMQPBasicGetObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_GET_SUBMETHOD, get: AMQPBasicGetObj())
     let ticket {.used.} = await s.readBEU16()
     result.get.queue = await s.decodeShortString()
     result.get.flags = cast[AMQPBasicGetBits](await s.readU8())
   of BASIC_GET_OK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_GET_OK_SUBMETHOD, getOk: AMQPBasicGetOkObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_GET_OK_SUBMETHOD, getOk: AMQPBasicGetOkObj())
     result.getOk.deliveryTag = await s.readBEU64()
     result.getOk.flags = cast[AMQPBasicRedeliveredBits](await s.readU8())
     result.getOk.exchange = await s.decodeShortString()
     result.getOk.routingKey = await s.decodeShortString()
     result.getOk.messageCount = await s.readBEU32()
   of BASIC_GET_EMPTY_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_GET_EMPTY_SUBMETHOD, getEmpty: AMQPBasicGetEmptyObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_GET_EMPTY_SUBMETHOD, getEmpty: AMQPBasicGetEmptyObj())
     result.getEmpty.clusterId = await s.decodeShortString()
   of BASIC_ACK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_ACK_SUBMETHOD, ack: AMQPBasicAckObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_ACK_SUBMETHOD, ack: AMQPBasicAckObj())
     result.ack.deliveryTag = await s.readBEU64()
     result.ack.flags = cast[AMQPBasicAckBits](await s.readU8())
   of BASIC_REJECT_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_REJECT_SUBMETHOD, reject: AMQPBasicRejectObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_REJECT_SUBMETHOD, reject: AMQPBasicRejectObj())
     result.reject.deliveryTag = await s.readBEU64()
     result.reject.flags = cast[AMQPBasicRequeueBits](await s.readU8())
   of BASIC_RECOVER_ASYNC_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, recover: AMQPBasicRecoverObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD, recover: AMQPBasicRecoverObj())
     result.recover.flags = cast[AMQPBasicRequeueBits](await s.readU8())
   of BASIC_RECOVER_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_SUBMETHOD, recover: AMQPBasicRecoverObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_RECOVER_SUBMETHOD, recover: AMQPBasicRecoverObj())
     result.recover.flags = cast[AMQPBasicRequeueBits](await s.readU8())
   of BASIC_RECOVER_OK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_RECOVER_OK_SUBMETHOD)
+    result = AMQPBasicMethod(kind: AMQP_BASIC_RECOVER_OK_SUBMETHOD)
   of BASIC_NACK_METHOD_ID:
-    result = AMQPBasic(kind: AMQP_BASIC_NACK_SUBMETHOD, nack: AMQPBasicNackObj())
+    result = AMQPBasicMethod(kind: AMQP_BASIC_NACK_SUBMETHOD, nack: AMQPBasicNackObj())
     result.nack.deliveryTag = await s.readBEU64()
     result.nack.flags = cast[AMQPBasicNackBits](await s.readU8())
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
-  
-proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
+    raise newException(ValueError, "Wrong MethodID: " & $t)
+
+
+proc encode*(meth: AMQPBasicMethod, dst: AsyncBufferedSocket) {.async.} =
   #echo $meth.kind
   case meth.kind:
   of AMQP_BASIC_QOS_SUBMETHOD:
@@ -404,11 +407,11 @@ proc encode*(meth: AMQPBasic, dst: AsyncBufferedSocket) {.async.} =
     await dst.writeBE(meth.nack.deliveryTag)
     await dst.write(cast[uint8](meth.nack.flags))
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
 
-proc newBasicQos*(prefetchSize: uint32, prefetchCount: uint16, globalQos: bool): AMQPBasic =
-  result = AMQPBasic(
+proc newBasicQos*(prefetchSize: uint32, prefetchCount: uint16, globalQos: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_QOS_SUBMETHOD,
     qos: AMQPBasicQOSObj(
       prefetchSize: prefetchSize,
@@ -419,13 +422,15 @@ proc newBasicQos*(prefetchSize: uint32, prefetchCount: uint16, globalQos: bool):
     )
   )
 
-proc newBasicQosOk*(): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicQosOk*(): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_QOS_OK_SUBMETHOD
   )
 
-proc newBasicConsume*(queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicConsume*(queue, consumerTag: string, noLocal, noAck, exclusive, noWait: bool, args: FieldTable): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_CONSUME_SUBMETHOD,
     consume: AMQPBasicConsumeObj(
       queue: queue,
@@ -440,16 +445,18 @@ proc newBasicConsume*(queue, consumerTag: string, noLocal, noAck, exclusive, noW
     )
   )
 
-proc newBasicConsumeOk*(consumerTag: string): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicConsumeOk*(consumerTag: string): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_CONSUME_OK_SUBMETHOD,
     consumeCancelOk: AMQPBasicConsumerTagObj(
       consumerTag: consumerTag
     )
   )
 
-proc newBasicCancel*(consumerTag: string, noWait: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicCancel*(consumerTag: string, noWait: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_CANCEL_SUBMETHOD,
     cancel: AMQPBasicCancelObj(
       consumerTag: consumerTag,
@@ -459,16 +466,18 @@ proc newBasicCancel*(consumerTag: string, noWait: bool): AMQPBasic =
     )
   )
 
-proc newBasicCancelOk*(consumerTag: string): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicCancelOk*(consumerTag: string): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_CANCEL_OK_SUBMETHOD,
     consumeCancelOk: AMQPBasicConsumerTagObj(
       consumerTag: consumerTag
     )
   )
 
-proc newBasicPublish*(exchange, routingKey: string, mandatory, immediate: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicPublish*(exchange, routingKey: string, mandatory, immediate: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_PUBLISH_SUBMETHOD,
     publish: AMQPBasicPublishObj(
       exchange: exchange,
@@ -480,8 +489,9 @@ proc newBasicPublish*(exchange, routingKey: string, mandatory, immediate: bool):
     )
   )
 
-proc newBasicReturn*(replyCode: uint16, replyText, exchange, routingKey: string): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicReturn*(replyCode: uint16, replyText, exchange, routingKey: string): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_RETURN_SUBMETHOD,
     ret: AMQPBasicReturnObj(
       replyCode: replyCode,
@@ -491,8 +501,9 @@ proc newBasicReturn*(replyCode: uint16, replyText, exchange, routingKey: string)
     )
   )
 
-proc newBasicDeliver*(consumerTag: string, deliveryTag: uint64, redelivered: bool, exchange, routingKey: string): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicDeliver*(consumerTag: string, deliveryTag: uint64, redelivered: bool, exchange, routingKey: string): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_DELIVER_SUBMETHOD,
     deliver: AMQPBasicDeliverObj(
       consumerTag: consumerTag,
@@ -505,8 +516,9 @@ proc newBasicDeliver*(consumerTag: string, deliveryTag: uint64, redelivered: boo
     )
   )
 
-proc newBasicGet*(queue: string, noAck: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicGet*(queue: string, noAck: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_GET_SUBMETHOD,
     get: AMQPBasicGetObj(
       queue: queue,
@@ -516,8 +528,9 @@ proc newBasicGet*(queue: string, noAck: bool): AMQPBasic =
     )
   )
 
-proc newBasicGetOk*(deliveryTag: uint64, redelivered: bool, exchange, routingKey: string, messageCount: uint32): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicGetOk*(deliveryTag: uint64, redelivered: bool, exchange, routingKey: string, messageCount: uint32): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_GET_OK_SUBMETHOD,
     getOk: AMQPBasicGetOkObj(
       deliveryTag: deliveryTag,
@@ -530,16 +543,18 @@ proc newBasicGetOk*(deliveryTag: uint64, redelivered: bool, exchange, routingKey
     )
   )
 
-proc newBasicGetEmpty*(clusterId: string): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicGetEmpty*(clusterId: string): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_GET_EMPTY_SUBMETHOD,
     getEmpty: AMQPBasicGetEmptyObj(
       clusterId: clusterId
     )
   )
 
-proc newBasicAck*(deliveryTag: uint64, multiple: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicAck*(deliveryTag: uint64, multiple: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_ACK_SUBMETHOD,
     ack: AMQPBasicAckObj(
       deliveryTag: deliveryTag,
@@ -549,8 +564,9 @@ proc newBasicAck*(deliveryTag: uint64, multiple: bool): AMQPBasic =
     )
   )
 
-proc newBasicReject*(deliveryTag: uint64, requeue: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicReject*(deliveryTag: uint64, requeue: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_REJECT_SUBMETHOD,
     reject: AMQPBasicRejectObj(
       deliveryTag: deliveryTag,
@@ -560,8 +576,9 @@ proc newBasicReject*(deliveryTag: uint64, requeue: bool): AMQPBasic =
     )
   )
 
-proc newBasicRecoverAsync*(requeue: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicRecoverAsync*(requeue: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_RECOVER_ASYNC_SUBMETHOD,
     recover: AMQPBasicRecoverObj(
       flags: AMQPBasicRequeueBits(
@@ -570,8 +587,9 @@ proc newBasicRecoverAsync*(requeue: bool): AMQPBasic =
     )
   )
 
-proc newBasicRecover*(requeue: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicRecover*(requeue: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_RECOVER_SUBMETHOD,
     recover: AMQPBasicRecoverObj(
       flags: AMQPBasicRequeueBits(
@@ -580,13 +598,15 @@ proc newBasicRecover*(requeue: bool): AMQPBasic =
     )
   )
 
-proc newBasicRecoverOk*(): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicRecoverOk*(): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_RECOVER_OK_SUBMETHOD
   )
 
-proc newBasicNack*(deliveryTag: uint64, multiple, requeue: bool): AMQPBasic =
-  result = AMQPBasic(
+
+proc newBasicNack*(deliveryTag: uint64, multiple, requeue: bool): AMQPBasicMethod =
+  result = AMQPBasicMethod(
     kind: AMQP_BASIC_NACK_SUBMETHOD,
     nack: AMQPBasicNackObj(
       deliveryTag: deliveryTag,
@@ -597,7 +617,8 @@ proc newBasicNack*(deliveryTag: uint64, multiple, requeue: bool): AMQPBasic =
     )
   )
 
-proc consumerTag*(self: AMQPBasic): string =
+
+proc consumerTag*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.consumerTag
@@ -610,7 +631,8 @@ proc consumerTag*(self: AMQPBasic): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc queue*(self: AMQPBasic): string =
+
+proc queue*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.queue
@@ -619,14 +641,16 @@ proc queue*(self: AMQPBasic): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc args*(self: AMQPBasic): FieldTable =
+
+proc args*(self: AMQPBasicMethod): FieldTable =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.args
   else:
     raise newException(FieldDefect, "No such field")
 
-proc exchange*(self: AMQPBasic): string =
+
+proc exchange*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result = self.publish.exchange
@@ -639,7 +663,8 @@ proc exchange*(self: AMQPBasic): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc routingKey*(self: AMQPBasic): string =
+
+proc routingKey*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result = self.publish.routingKey
@@ -652,21 +677,24 @@ proc routingKey*(self: AMQPBasic): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc replyCode*(self: AMQPBasic): uint16 =
+
+proc replyCode*(self: AMQPBasicMethod): uint16 =
   case self.kind
   of AMQP_BASIC_RETURN_SUBMETHOD:
     result = self.ret.replyCode
   else:
     raise newException(FieldDefect, "No such field")
 
-proc replyText*(self: AMQPBasic): string =
+
+proc replyText*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_RETURN_SUBMETHOD:
     result = self.ret.replyText
   else:
     raise newException(FieldDefect, "No such field")
 
-proc deliveryTag*(self: AMQPBasic): uint64 =
+
+proc deliveryTag*(self: AMQPBasicMethod): uint64 =
   case self.kind
   of AMQP_BASIC_DELIVER_SUBMETHOD:
     result = self.deliver.deliveryTag
@@ -681,49 +709,56 @@ proc deliveryTag*(self: AMQPBasic): uint64 =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc messageCount*(self: AMQPBasic): uint32 =
+
+proc messageCount*(self: AMQPBasicMethod): uint32 =
   case self.kind
   of AMQP_BASIC_GET_OK_SUBMETHOD:
     result = self.getOk.messageCount
   else:
     raise newException(FieldDefect, "No such field")
 
-proc clusterId*(self: AMQPBasic): string =
+
+proc clusterId*(self: AMQPBasicMethod): string =
   case self.kind
   of AMQP_BASIC_GET_EMPTY_SUBMETHOD:
     result = self.getEmpty.clusterId
   else:
     raise newException(FieldDefect, "No such field")
 
-proc global*(self: AMQPBasic): bool =
+
+proc global*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_QOS_SUBMETHOD:
     result = self.qos.flags.global
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `global=`*(self: AMQPBasic, global: bool) =
+
+proc `global=`*(self: AMQPBasicMethod, global: bool) =
   case self.kind
   of AMQP_BASIC_QOS_SUBMETHOD:
     self.qos.flags.global = global
   else:
     raise newException(FieldDefect, "No such field")
 
-proc noLocal*(self: AMQPBasic): bool =
+
+proc noLocal*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.flags.noLocal
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noLocal=`*(self: AMQPBasic, noLocal: bool) =
+
+proc `noLocal=`*(self: AMQPBasicMethod, noLocal: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noLocal = noLocal
   else:
     raise newException(FieldDefect, "No such field")
 
-proc noAck*(self: AMQPBasic): bool =
+
+proc noAck*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.flags.noAck
@@ -732,7 +767,8 @@ proc noAck*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noAck=`*(self: AMQPBasic, noAck: bool) =
+
+proc `noAck=`*(self: AMQPBasicMethod, noAck: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noAck = noAck
@@ -741,21 +777,24 @@ proc `noAck=`*(self: AMQPBasic, noAck: bool) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc exclusive*(self: AMQPBasic): bool =
+
+proc exclusive*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.flags.exclusive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `exclusive=`*(self: AMQPBasic, exclusive: bool) =
+
+proc `exclusive=`*(self: AMQPBasicMethod, exclusive: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.exclusive = exclusive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc noWait*(self: AMQPBasic): bool =
+
+proc noWait*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     result = self.consume.flags.noWait
@@ -764,7 +803,8 @@ proc noWait*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noWait=`*(self: AMQPBasic, noWait: bool) =
+
+proc `noWait=`*(self: AMQPBasicMethod, noWait: bool) =
   case self.kind
   of AMQP_BASIC_CONSUME_SUBMETHOD:
     self.consume.flags.noWait = noWait
@@ -773,35 +813,40 @@ proc `noWait=`*(self: AMQPBasic, noWait: bool) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc mandatory*(self: AMQPBasic): bool =
+
+proc mandatory*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result = self.publish.flags.mandatory
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `mandatory=`*(self: AMQPBasic, mandatory: bool) =
+
+proc `mandatory=`*(self: AMQPBasicMethod, mandatory: bool) =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     self.publish.flags.mandatory = mandatory
   else:
     raise newException(FieldDefect, "No such field")
 
-proc immediate*(self: AMQPBasic): bool =
+
+proc immediate*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     result = self.publish.flags.immediate
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `immediate=`*(self: AMQPBasic, immediate: bool) =
+
+proc `immediate=`*(self: AMQPBasicMethod, immediate: bool) =
   case self.kind
   of AMQP_BASIC_PUBLISH_SUBMETHOD:
     self.publish.flags.immediate = immediate
   else:
     raise newException(FieldDefect, "No such field")
 
-proc redelivered*(self: AMQPBasic): bool =
+
+proc redelivered*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_DELIVER_SUBMETHOD:
     result = self.deliver.flags.redelivered
@@ -810,7 +855,8 @@ proc redelivered*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `redelivered=`*(self: AMQPBasic, redelivered: bool) =
+
+proc `redelivered=`*(self: AMQPBasicMethod, redelivered: bool) =
   case self.kind
   of AMQP_BASIC_DELIVER_SUBMETHOD:
     self.deliver.flags.redelivered = redelivered
@@ -819,7 +865,8 @@ proc `redelivered=`*(self: AMQPBasic, redelivered: bool) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc multiple*(self: AMQPBasic): bool =
+
+proc multiple*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_ACK_SUBMETHOD:
     result = self.ack.flags.multiple
@@ -828,7 +875,8 @@ proc multiple*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `multiple=`*(self: AMQPBasic, multiple: bool) =
+
+proc `multiple=`*(self: AMQPBasicMethod, multiple: bool) =
   case self.kind
   of AMQP_BASIC_ACK_SUBMETHOD:
     self.ack.flags.multiple = multiple
@@ -837,7 +885,8 @@ proc `multiple=`*(self: AMQPBasic, multiple: bool) =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc requeue*(self: AMQPBasic): bool =
+
+proc requeue*(self: AMQPBasicMethod): bool =
   case self.kind
   of AMQP_BASIC_REJECT_SUBMETHOD:
     result = self.reject.flags.requeue
@@ -848,7 +897,8 @@ proc requeue*(self: AMQPBasic): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `requeue=`*(self: AMQPBasic, requeue: bool) =
+
+proc `requeue=`*(self: AMQPBasicMethod, requeue: bool) =
   case self.kind
   of AMQP_BASIC_REJECT_SUBMETHOD:
     self.reject.flags.requeue = requeue

@@ -1,26 +1,18 @@
-#[
-Class Grammar:
-    channel       = open-channel *use-channel close-channel
-    open-channel  = C:OPEN S:OPEN-OK
-    use-channel   = C:FLOW S:FLOW-OK
-                  / S:FLOW C:FLOW-OK
-                  / functional-class
-    close-channel = C:CLOSE S:CLOSE-OK
-                  / S:CLOSE C:CLOSE-OK
-]#
-
 import std/[asyncdispatch, tables]
 import pkg/networkutils/buffered_socket
 import ../field
-import ../exceptions
 
-const CHANNEL_METHODS* = 0x0014.uint16
-const CHANNEL_OPEN_METHOD_ID* = 0x0014000A.uint32
-const CHANNEL_OPEN_OK_METHOD_ID* = 0x0014000B.uint32
-const CHANNEL_FLOW_METHOD_ID* = 0x00140014.uint32
-const CHANNEL_FLOW_OK_METHOD_ID* = 0x00140015.uint32
-const CHANNEL_CLOSE_METHOD_ID* = 0x00140028.uint32
-const CHANNEL_CLOSE_OK_METHOD_ID* = 0x00140029.uint32
+
+const
+  CHANNEL_METHODS* = 0x0014.uint16
+
+  CHANNEL_OPEN_METHOD_ID* = 0x0014000A.uint32
+  CHANNEL_OPEN_OK_METHOD_ID* = 0x0014000B.uint32
+  CHANNEL_FLOW_METHOD_ID* = 0x00140014.uint32
+  CHANNEL_FLOW_OK_METHOD_ID* = 0x00140015.uint32
+  CHANNEL_CLOSE_METHOD_ID* = 0x00140028.uint32
+  CHANNEL_CLOSE_OK_METHOD_ID* = 0x00140029.uint32
+
 
 {. push warning[ProveField]:on .}
 
@@ -38,8 +30,17 @@ type
     active {.bitsize: 1.}: bool
     unused {.bitsize: 7.}: uint8
 
-  AMQPChannel* = ref AMQPChannelObj
-  AMQPChannelObj* = object of RootObj
+  AMQPChannelMethod* = ref AMQPChannelMethodObj
+    ## Class Grammar:
+    ##   channel       = open-channel *use-channel close-channel
+    ##   open-channel  = C:OPEN S:OPEN-OK
+    ##   use-channel   = C:FLOW S:FLOW-OK
+    ##                 / S:FLOW C:FLOW-OK
+    ##                 / functional-class
+    ##   close-channel = C:CLOSE S:CLOSE-OK
+    ##                 / S:CLOSE C:CLOSE-OK
+
+  AMQPChannelMethodObj* = object of RootObj
     case kind*: AMQPChannelKind
     of AMQP_CHANNEL_OPEN_SUBMETHOD:
       outOfBand*: string
@@ -57,7 +58,8 @@ type
     else:
       discard
 
-proc len*(meth: AMQPChannel): int =
+
+proc len*(meth: AMQPChannelMethod): int =
   result = 0
   case meth.kind:
   of AMQP_CHANNEL_OPEN_SUBMETHOD:
@@ -74,34 +76,36 @@ proc len*(meth: AMQPChannel): int =
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
     result.inc(0)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc decode*(_: typedesc[AMQPChannel], s: AsyncBufferedSocket, t: uint32): Future[AMQPChannel] {.async.} =
+
+proc decode*(_: typedesc[AMQPChannelMethod], s: AsyncBufferedSocket, t: uint32): Future[AMQPChannelMethod] {.async.} =
   case t:
   of CHANNEL_OPEN_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_OPEN_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_OPEN_SUBMETHOD)
     result.outOfBand = await s.decodeShortString()
   of CHANNEL_OPEN_OK_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_OPEN_OK_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_OPEN_OK_SUBMETHOD)
     result.channelId = await s.decodeString()
   of CHANNEL_FLOW_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_FLOW_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_FLOW_SUBMETHOD)
     result.flowFlags = cast[AMQPChannelFlowBits](await s.readU8())
   of CHANNEL_FLOW_OK_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_FLOW_OK_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_FLOW_OK_SUBMETHOD)
     result.flowFlags = cast[AMQPChannelFlowBits](await s.readU8())
   of CHANNEL_CLOSE_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_CLOSE_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_CLOSE_SUBMETHOD)
     result.replyCode = await s.readBEU16()
     result.replyText = await s.decodeShortString()
     result.classId = await s.readBEU16()
     result.methodId = await s.readBEU16()
   of CHANNEL_CLOSE_OK_METHOD_ID:
-    result = AMQPChannel(kind: AMQP_CHANNEL_CLOSE_OK_SUBMETHOD)
+    result = AMQPChannelMethod(kind: AMQP_CHANNEL_CLOSE_OK_SUBMETHOD)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $t)
 
-proc encode*(meth: AMQPChannel, dst: AsyncBufferedSocket) {.async.} =
+
+proc encode*(meth: AMQPChannelMethod, dst: AsyncBufferedSocket) {.async.} =
   #echo $meth.kind
   case meth.kind:
   of AMQP_CHANNEL_OPEN_SUBMETHOD:
@@ -118,38 +122,43 @@ proc encode*(meth: AMQPChannel, dst: AsyncBufferedSocket) {.async.} =
   of AMQP_CHANNEL_CLOSE_OK_SUBMETHOD:
     discard
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
-proc newChannelOpen*(outOfBand: string): AMQPChannel =
-  result = AMQPChannel(
+
+proc newChannelOpen*(outOfBand: string): AMQPChannelMethod =
+  result = AMQPChannelMethod(
     kind: AMQP_CHANNEL_OPEN_SUBMETHOD, 
     outOfBand: outOfBand
   )
 
-proc newChannelOpenOk*(channelId: string): AMQPChannel =
-  result = AMQPChannel(
+
+proc newChannelOpenOk*(channelId: string): AMQPChannelMethod =
+  result = AMQPChannelMethod(
     kind: AMQP_CHANNEL_OPEN_OK_SUBMETHOD, 
     channelId: channelId
   )
 
-proc newChannelFlow*(active: bool): AMQPChannel =
-  result = AMQPChannel(
+
+proc newChannelFlow*(active: bool): AMQPChannelMethod =
+  result = AMQPChannelMethod(
     kind: AMQP_CHANNEL_FLOW_SUBMETHOD,
     flowFlags: AMQPChannelFlowBits(
       active: active
     )
   )
 
-proc newChannelFlowOk*(active: bool): AMQPChannel =
-  result = AMQPChannel(
+
+proc newChannelFlowOk*(active: bool): AMQPChannelMethod =
+  result = AMQPChannelMethod(
     kind: AMQP_CHANNEL_FLOW_OK_SUBMETHOD,
     flowFlags: AMQPChannelFlowBits(
       active: active
     )
   )
 
-proc newChannelClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPChannel =
-  result = AMQPChannel(
+
+proc newChannelClose*(replyCode: uint16, replyText: string, classId: uint16, methodId: uint16): AMQPChannelMethod =
+  result = AMQPChannelMethod(
     kind: AMQP_CHANNEL_CLOSE_SUBMETHOD,
     replyCode: replyCode,
     replyText: replyText,
@@ -157,17 +166,20 @@ proc newChannelClose*(replyCode: uint16, replyText: string, classId: uint16, met
     methodId: methodId
   )
 
-proc newChannelCloseOk*(): AMQPChannel =
-  result = AMQPChannel(kind: AMQP_CHANNEL_CLOSE_OK_SUBMETHOD)
 
-proc active*(self: AMQPChannel): bool =
+proc newChannelCloseOk*(): AMQPChannelMethod =
+  result = AMQPChannelMethod(kind: AMQP_CHANNEL_CLOSE_OK_SUBMETHOD)
+
+
+proc active*(self: AMQPChannelMethod): bool =
   case self.kind
   of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
     result = self.flowFlags.active
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `active=`*(self: AMQPChannel, active: bool) =
+
+proc `active=`*(self: AMQPChannelMethod, active: bool) =
   case self.kind
   of AMQP_CHANNEL_FLOW_SUBMETHOD, AMQP_CHANNEL_FLOW_OK_SUBMETHOD:
     self.flowFlags.active = active

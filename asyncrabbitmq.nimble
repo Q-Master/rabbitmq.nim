@@ -4,9 +4,13 @@ description = "Pure Nim asyncronous driver for RabbitMQ"
 version     = RMQVERSION
 license     = "MIT"
 author      = AUTHOR
+srcDir      = "asyncrabbitmq"
+
 
 # Dependencies
-requires "nim >= 0.20.00", "networkutils >= 0.6.1"
+requires "nim >= 2.0"
+requires "networkutils >= 0.6.1"
+
 
 task test, "tests":
   let tests = @["connection", "channel", "exchange", "queue", "basic"]

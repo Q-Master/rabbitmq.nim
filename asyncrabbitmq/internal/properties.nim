@@ -1,21 +1,23 @@
 import std/[times, asyncdispatch, options, strutils]
 import pkg/networkutils/buffered_socket
-import ./field
-import ./exceptions
+import ./[field, exceptions]
 
-const CONNECTION_PROPERTIES_ID* = 0x000A.uint16
-const CHANNEL_PROPERTIES_ID* = 0x0014.uint16
-const ACCESS_PROPERTIES_ID* = 0x001E.uint16
-const EXCHANGE_PROPERTIES_ID* = 0x0028.uint16
-const QUEUE_PROPERTIES_ID* = 0x0032.uint16
-const BASIC_PROPERTIES_ID* = 0x003C.uint16
-const CONFIRM_PROPERTIES_ID* = 0x0055.uint16
-const TX_PROPERTIES_ID* = 0x005A.uint16
-const ALL_PROPERTIES_IDS* = {
-  CONNECTION_PROPERTIES_ID, CHANNEL_PROPERTIES_ID, ACCESS_PROPERTIES_ID, 
-  EXCHANGE_PROPERTIES_ID, QUEUE_PROPERTIES_ID, BASIC_PROPERTIES_ID,
-  CONFIRM_PROPERTIES_ID, TX_PROPERTIES_ID
+
+const
+  CONNECTION_PROPERTIES_ID* = 0x000A.uint16
+  CHANNEL_PROPERTIES_ID* = 0x0014.uint16
+  ACCESS_PROPERTIES_ID* = 0x001E.uint16
+  EXCHANGE_PROPERTIES_ID* = 0x0028.uint16
+  QUEUE_PROPERTIES_ID* = 0x0032.uint16
+  BASIC_PROPERTIES_ID* = 0x003C.uint16
+  CONFIRM_PROPERTIES_ID* = 0x0055.uint16
+  TX_PROPERTIES_ID* = 0x005A.uint16
+  ALL_PROPERTIES_IDS* = {
+    CONNECTION_PROPERTIES_ID, CHANNEL_PROPERTIES_ID, ACCESS_PROPERTIES_ID,
+    EXCHANGE_PROPERTIES_ID, QUEUE_PROPERTIES_ID, BASIC_PROPERTIES_ID,
+    CONFIRM_PROPERTIES_ID, TX_PROPERTIES_ID
   }
+
 
 type
   PropertiesKind* = enum
@@ -71,11 +73,13 @@ type
     else:
       discard
 
+
 proc newBasicProperties*(): Properties =
   result = Properties(
     kind: BASIC_PROPERTIES,
     basicFlags: cast[BasicPropertiesFlags](0.uint32)
   )
+
 
 proc len*(p: Properties): int =
   result = 0
@@ -118,6 +122,7 @@ proc len*(p: Properties): int =
       result.inc(p.clusterId.shortStringLen())
   else:
     discard
+
 
 {.warning[HoleEnumConv]:off.}
 proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties] {.async.} =
@@ -169,6 +174,7 @@ proc decodeProperties*(src: AsyncBufferedSocket, id: uint16): Future[Properties]
     discard
 {.warning[HoleEnumConv]:on.}
 
+
 proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties) {.async.} =
   var flags: uint32 = (if p.kind == BASIC_PROPERTIES: cast[uint32](p.basicFlags) else: p.flags)
   while true:
@@ -214,6 +220,7 @@ proc encodeProperties*(dst: AsyncBufferedSocket, p: Properties) {.async.} =
   else:
     discard
 
+
 proc clusterId*(self: Properties): Option[string] =
   case self.kind
   of BASIC_PROPERTIES:
@@ -224,6 +231,7 @@ proc clusterId*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `clusterId=`*(self: Properties, clusterId: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -231,6 +239,7 @@ proc `clusterId=`*(self: Properties, clusterId: string) =
     self.basicFlags.clusterId = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc appId*(self: Properties): Option[string] =
   case self.kind
@@ -242,6 +251,7 @@ proc appId*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `appId=`*(self: Properties, appId: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -249,6 +259,7 @@ proc `appId=`*(self: Properties, appId: string) =
     self.basicFlags.appId = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc userId*(self: Properties): Option[string] =
   case self.kind
@@ -260,6 +271,7 @@ proc userId*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `userId=`*(self: Properties, userId: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -267,6 +279,7 @@ proc `userId=`*(self: Properties, userId: string) =
     self.basicFlags.userId = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc pType*(self: Properties): Option[string] =
   case self.kind
@@ -278,6 +291,7 @@ proc pType*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `pType=`*(self: Properties, pType: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -285,6 +299,7 @@ proc `pType=`*(self: Properties, pType: string) =
     self.basicFlags.pType = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc timestamp*(self: Properties): Option[Time] =
   case self.kind
@@ -296,6 +311,7 @@ proc timestamp*(self: Properties): Option[Time] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `timestamp=`*(self: Properties, timestamp: Time) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -303,6 +319,7 @@ proc `timestamp=`*(self: Properties, timestamp: Time) =
     self.basicFlags.timestamp = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc messageId*(self: Properties): Option[string] =
   case self.kind
@@ -314,6 +331,7 @@ proc messageId*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `messageId=`*(self: Properties, messageId: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -321,6 +339,7 @@ proc `messageId=`*(self: Properties, messageId: string) =
     self.basicFlags.messageId = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc expiration*(self: Properties): Option[Duration] =
   case self.kind
@@ -332,6 +351,7 @@ proc expiration*(self: Properties): Option[Duration] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `expiration=`*(self: Properties, expiration: Duration) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -339,6 +359,7 @@ proc `expiration=`*(self: Properties, expiration: Duration) =
     self.basicFlags.expiration = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc replyTo*(self: Properties): Option[string] =
   case self.kind
@@ -350,6 +371,7 @@ proc replyTo*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `replyTo=`*(self: Properties, replyTo: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -357,6 +379,7 @@ proc `replyTo=`*(self: Properties, replyTo: string) =
     self.basicFlags.replyTo = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc correlationId*(self: Properties): Option[string] =
   case self.kind
@@ -368,6 +391,7 @@ proc correlationId*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `correlationId=`*(self: Properties, correlationId: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -375,6 +399,7 @@ proc `correlationId=`*(self: Properties, correlationId: string) =
     self.basicFlags.correlationId = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc priority*(self: Properties): Option[uint8] =
   case self.kind
@@ -386,6 +411,7 @@ proc priority*(self: Properties): Option[uint8] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `priority=`*(self: Properties, priority: uint8) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -393,6 +419,7 @@ proc `priority=`*(self: Properties, priority: uint8) =
     self.basicFlags.priority = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc deliveryMode*(self: Properties): Option[uint8] =
   case self.kind
@@ -404,6 +431,7 @@ proc deliveryMode*(self: Properties): Option[uint8] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `deliveryMode=`*(self: Properties, deliveryMode: uint8) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -412,12 +440,14 @@ proc `deliveryMode=`*(self: Properties, deliveryMode: uint8) =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc headers*(self: Properties): FieldTable =
   case self.kind
   of BASIC_PROPERTIES:
     result = self.headers
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc `headers=`*(self: Properties, headers: FieldTable) =
   case self.kind
@@ -426,6 +456,7 @@ proc `headers=`*(self: Properties, headers: FieldTable) =
     self.basicFlags.headers = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc contentEncoding*(self: Properties): Option[string] =
   case self.kind
@@ -437,6 +468,7 @@ proc contentEncoding*(self: Properties): Option[string] =
   else:
     raise newException(FieldDefect, "No such field")
 
+
 proc `contentEncoding=`*(self: Properties, contentEncoding: string) =
   case self.kind
   of BASIC_PROPERTIES:
@@ -444,6 +476,7 @@ proc `contentEncoding=`*(self: Properties, contentEncoding: string) =
     self.basicFlags.contentEncoding = true
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc contentType*(self: Properties): Option[string] =
   case self.kind
@@ -454,6 +487,7 @@ proc contentType*(self: Properties): Option[string] =
       result = string.none
   else:
     raise newException(FieldDefect, "No such field")
+
 
 proc `contentType=`*(self: Properties, contentType: string) =
   case self.kind

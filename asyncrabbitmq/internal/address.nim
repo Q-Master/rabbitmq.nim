@@ -1,4 +1,6 @@
 import std/[tables, net, uri, strutils, algorithm, random]
+import ./spec
+
 
 type
   LoginData = ref LoginDataObj
@@ -28,18 +30,12 @@ type
     order*: RMQConnectionOrder
     addresses*: seq[RMQAddress]
 
-let DEFAULT_PORTS = {
-  "amqp": 5672,
-  "amqps": 5671,
-}.toTable()
 
-const DEFAULT_USER* = "guest"
-const DEFAULT_PASSWORD* = "guest"
-
-proc newLogin(): LoginData =
+proc newLogin(u: string = DEFAULT_USER, p: string = DEFAULT_PASSWORD): LoginData =
   result.new
-  result.username = DEFAULT_USER
-  result.password = DEFAULT_PASSWORD
+  result.username = u
+  result.password = p
+
 
 proc fromURL*(url: string): RMQAddress =
   result.new
@@ -50,11 +46,8 @@ proc fromURL*(url: string): RMQAddress =
     raise newException(UriParseError, "AMQP address should start with \"amqp://\" or \"amqps://\"")
   result.host = rmqUri.hostname
   result.port = (if rmqUri.port.len == 0: Port(DEFAULT_PORTS[rmqUri.scheme]) else: Port(rmqUri.port.parseInt))
-  result.login = newLogin()
+  result.login = if url.contains('@'): newLogin(rmqUri.username, rmqUri.password) else: newLogin()
 
-  if url.contains('@'):
-    result.login.username = rmqUri.username
-    result.login.password = rmqUri.password
   if rmqUri.path[0] == '/' and rmqUri.path.len == 1:
     result.vhost = rmqUri.path
   else:
@@ -97,6 +90,7 @@ proc fromURL*(url: string): RMQAddress =
         caDir = caDir, caFile = caFile
       )
 
+
 proc fromUrls*(urls: seq[string], order: RMQConnectionOrder = RMQ_CONNECTION_DIRECT): RMQAddresses =
   randomize()
   result.new
@@ -117,6 +111,7 @@ proc fromUrls*(urls: seq[string], order: RMQConnectionOrder = RMQ_CONNECTION_DIR
       discard
   for url in urllist:
     result.addresses.add(fromURL(url))
+
 
 proc next*(addrs: RMQAddresses): RMQAddress =
   result = addrs.addresses[addrs.current]

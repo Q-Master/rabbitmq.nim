@@ -1,25 +1,20 @@
-#[
-Class Grammar:
-    exchange  = C:DECLARE  S:DECLARE-OK
-              / C:DELETE   S:DELETE-OK
-              / C:BIND     S:BIND-OK
-              / C:UNBIND   S:UNBIND-OK
-]#
-
 import std/[asyncdispatch, tables, strutils]
 import pkg/networkutils/buffered_socket
 import ../field
-import ../exceptions
 
-const EXCHANGE_METHODS* = 0x0028.uint16
-const EXCHANGE_DECLARE_METHOD_ID* = 0x0028000A.uint32
-const EXCHANGE_DECLARE_OK_METHOD_ID* = 0x0028000B.uint32
-const EXCHANGE_DELETE_METHOD_ID* = 0x00280014.uint32
-const EXCHANGE_DELETE_OK_METHOD_ID* = 0x00280015.uint32
-const EXCHANGE_BIND_METHOD_ID* = 0x0028001E.uint32
-const EXCHANGE_BIND_OK_METHOD_ID* = 0x0028001F.uint32
-const EXCHANGE_UNBIND_METHOD_ID* = 0x00280028.uint32
-const EXCHANGE_UNBIND_OK_METHOD_ID* = 0x00280033.uint32
+
+const
+  EXCHANGE_METHODS* = 0x0028.uint16
+
+  EXCHANGE_DECLARE_METHOD_ID* = 0x0028000A.uint32
+  EXCHANGE_DECLARE_OK_METHOD_ID* = 0x0028000B.uint32
+  EXCHANGE_DELETE_METHOD_ID* = 0x00280014.uint32
+  EXCHANGE_DELETE_OK_METHOD_ID* = 0x00280015.uint32
+  EXCHANGE_BIND_METHOD_ID* = 0x0028001E.uint32
+  EXCHANGE_BIND_OK_METHOD_ID* = 0x0028001F.uint32
+  EXCHANGE_UNBIND_METHOD_ID* = 0x00280028.uint32
+  EXCHANGE_UNBIND_OK_METHOD_ID* = 0x00280033.uint32
+
 
 {. push warning[ProveField]:on .}
 
@@ -75,8 +70,14 @@ type
     flags: AMQPExchangeBindUnbindBits
     args: FieldTable
 
-  AMQPExchange* = ref AMQPExchangeObj
-  AMQPExchangeObj* = object of RootObj
+  AMQPExchangeMethod* = ref AMQPExchangeMethodObj
+    ## Class Grammar:
+    ##   exchange  = C:DECLARE  S:DECLARE-OK
+    ##             / C:DELETE   S:DELETE-OK
+    ##             / C:BIND     S:BIND-OK
+    ##             / C:UNBIND   S:UNBIND-OK
+
+  AMQPExchangeMethodObj* = object of RootObj
     case kind*: AMQPExchangeKind
     of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
       declare: AMQPExchangeDeclareObj
@@ -92,7 +93,8 @@ type
     else:
       discard
 
-proc len*(meth: AMQPExchange): int =
+
+proc len*(meth: AMQPExchangeMethod): int =
   result = 0
   case meth.kind:
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
@@ -118,29 +120,29 @@ proc len*(meth: AMQPExchange): int =
     result.inc(sizeInt8Uint8)
     result.inc(meth.bindUnbind.args.len)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
 
 
-proc decode*(_: typedesc[AMQPExchange], s: AsyncBufferedSocket, t: uint32): Future[AMQPExchange] {.async.} =
+proc decode*(_: typedesc[AMQPExchangeMethod], s: AsyncBufferedSocket, t: uint32): Future[AMQPExchangeMethod] {.async.} =
   case t:
   of EXCHANGE_DECLARE_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_DECLARE_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_DECLARE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.declare.exchange = await s.decodeShortString()
     result.declare.eType = parseEnum[AMQPExchangeType]((await s.decodeShortString()).toLowerAscii())
     result.declare.flags = cast[AMQPExchangeDeclareBits](await s.readU8())
     result.declare.args = await s.decodeTable()
   of EXCHANGE_DECLARE_OK_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD)
   of EXCHANGE_DELETE_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_DELETE_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_DELETE_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.del.exchange = await s.decodeShortString()
     result.del.flags = cast[AMQPExchangeDeleteBits](await s.readU8())
   of EXCHANGE_DELETE_OK_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_DELETE_OK_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_DELETE_OK_SUBMETHOD)
   of EXCHANGE_BIND_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_BIND_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_BIND_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.bindUnbind.destination = await s.decodeShortString()
     result.bindUnbind.source = await s.decodeShortString()
@@ -148,9 +150,9 @@ proc decode*(_: typedesc[AMQPExchange], s: AsyncBufferedSocket, t: uint32): Futu
     result.bindUnbind.flags = cast[AMQPExchangeBindUnbindBits](await s.readU8())
     result.bindUnbind.args = await s.decodeTable()
   of EXCHANGE_BIND_OK_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_BIND_OK_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_BIND_OK_SUBMETHOD)
   of EXCHANGE_UNBIND_METHOD_ID:
-    result = AMQPExchange(kind: AMQP_EXCHANGE_UNBIND_SUBMETHOD)
+    result = AMQPExchangeMethod(kind: AMQP_EXCHANGE_UNBIND_SUBMETHOD)
     let ticket {.used.} = await s.readBEU16()
     result.bindUnbind.destination = await s.decodeShortString()
     result.bindUnbind.source = await s.decodeShortString()
@@ -158,9 +160,10 @@ proc decode*(_: typedesc[AMQPExchange], s: AsyncBufferedSocket, t: uint32): Futu
     result.bindUnbind.flags = cast[AMQPExchangeBindUnbindBits](await s.readU8())
     result.bindUnbind.args = await s.decodeTable()
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $t)
 
-proc encode*(meth: AMQPExchange, dst: AsyncBufferedSocket) {.async.} =
+
+proc encode*(meth: AMQPExchangeMethod, dst: AsyncBufferedSocket) {.async.} =
   #echo $meth.kind
   case meth.kind:
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
@@ -186,13 +189,14 @@ proc encode*(meth: AMQPExchange, dst: AsyncBufferedSocket) {.async.} =
     await dst.write(cast[uint8](meth.bindUnbind.flags))
     await dst.encodeTable(meth.bindUnbind.args)
   else:
-    raise newException(InvalidFrameMethodException, "Wrong MethodID")
+    raise newException(ValueError, "Wrong MethodID: " & $meth.kind)
+
 
 proc newExchangeDeclare*(
   exchange: string, eType: AMQPExchangeType, 
   passive, durable, autoDelete, internal, noWait: bool, 
-  args: FieldTable): AMQPExchange =
-  result = AMQPExchange(
+  args: FieldTable): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_DECLARE_SUBMETHOD,
     declare: AMQPExchangeDeclareObj(
       exchange: exchange,
@@ -208,13 +212,15 @@ proc newExchangeDeclare*(
     )
   )
 
-proc newExchangeDeclareOk*(): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeDeclareOk*(): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_DECLARE_OK_SUBMETHOD
   )
 
-proc newExchangeDelete*(exchange: string, ifUnused, noWait: bool): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeDelete*(exchange: string, ifUnused, noWait: bool): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_DELETE_SUBMETHOD,
     del: AMQPExchangeDeleteObj(
       exchange: exchange,
@@ -225,13 +231,15 @@ proc newExchangeDelete*(exchange: string, ifUnused, noWait: bool): AMQPExchange 
     )
   )
 
-proc newExchangeDeleteOk*(): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeDeleteOk*(): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_DELETE_OK_SUBMETHOD
   )
 
-proc newExchangeBind*(destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeBind*(destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_BIND_SUBMETHOD,
     bindUnbind: AMQPExchangeBindUnbindObj(
       destination: destination,
@@ -244,13 +252,15 @@ proc newExchangeBind*(destination, source, routingKey: string, noWait=false, arg
     )
   )
 
-proc newExchangeBindOk*(): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeBindOk*(): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_BIND_OK_SUBMETHOD
   )
 
-proc newExchangeUnbind*(destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeUnbind*(destination, source, routingKey: string, noWait=false, args: FieldTable): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_UNBIND_SUBMETHOD,
     bindUnbind: AMQPExchangeBindUnbindObj(
       destination: destination,
@@ -263,12 +273,14 @@ proc newExchangeUnbind*(destination, source, routingKey: string, noWait=false, a
     )
   )
 
-proc newExchangeUnbindOk*(): AMQPExchange =
-  result = AMQPExchange(
+
+proc newExchangeUnbindOk*(): AMQPExchangeMethod =
+  result = AMQPExchangeMethod(
     kind: AMQP_EXCHANGE_UNBIND_OK_SUBMETHOD
   )
 
-proc exchange*(self: AMQPExchange): string =
+
+proc exchange*(self: AMQPExchangeMethod): string =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.exchange
@@ -277,14 +289,16 @@ proc exchange*(self: AMQPExchange): string =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc eType*(self: AMQPExchange): AMQPExchangeType =
+
+proc eType*(self: AMQPExchangeMethod): AMQPExchangeType =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.eType
   else:
     raise newException(FieldDefect, "No such field")
 
-proc args*(self: AMQPExchange): FieldTable =
+
+proc args*(self: AMQPExchangeMethod): FieldTable =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.args
@@ -293,98 +307,112 @@ proc args*(self: AMQPExchange): FieldTable =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc destination*(self: AMQPExchange): string =
+
+proc destination*(self: AMQPExchangeMethod): string =
   case self.kind
   of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
     result = self.bindUnbind.destination
   else:
     raise newException(FieldDefect, "No such field")
 
-proc source*(self: AMQPExchange): string =
+
+proc source*(self: AMQPExchangeMethod): string =
   case self.kind
   of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
     result = self.bindUnbind.source
   else:
     raise newException(FieldDefect, "No such field")
 
-proc routingKey*(self: AMQPExchange): string =
+
+proc routingKey*(self: AMQPExchangeMethod): string =
   case self.kind
   of AMQP_EXCHANGE_BIND_SUBMETHOD, AMQP_EXCHANGE_UNBIND_SUBMETHOD:
     result = self.bindUnbind.routingKey
   else:
     raise newException(FieldDefect, "No such field")
 
-proc passive*(self: AMQPExchange): bool =
+
+proc passive*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.flags.passive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `passive=`*(self: AMQPExchange, passive: bool) =
+
+proc `passive=`*(self: AMQPExchangeMethod, passive: bool) =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     self.declare.flags.passive = passive
   else:
     raise newException(FieldDefect, "No such field")
 
-proc durable*(self: AMQPExchange): bool =
+
+proc durable*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.flags.durable
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `durable=`*(self: AMQPExchange, durable: bool) =
+
+proc `durable=`*(self: AMQPExchangeMethod, durable: bool) =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     self.declare.flags.durable = durable
   else:
     raise newException(FieldDefect, "No such field")
 
-proc autoDelete*(self: AMQPExchange): bool =
+
+proc autoDelete*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.flags.autoDelete
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `autoDelete=`*(self: AMQPExchange, autoDelete: bool) =
+
+proc `autoDelete=`*(self: AMQPExchangeMethod, autoDelete: bool) =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     self.declare.flags.autoDelete = autoDelete
   else:
     raise newException(FieldDefect, "No such field")
 
-proc internal*(self: AMQPExchange): bool =
+
+proc internal*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.flags.internal
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `internal=`*(self: AMQPExchange, internal: bool) =
+
+proc `internal=`*(self: AMQPExchangeMethod, internal: bool) =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     self.declare.flags.internal = internal
   else:
     raise newException(FieldDefect, "No such field")
 
-proc ifUnused*(self: AMQPExchange): bool =
+
+proc ifUnused*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DELETE_SUBMETHOD:
     result = self.del.flags.ifUnused
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `ifUnused=`*(self: AMQPExchange, ifUnused: bool) =
+
+proc `ifUnused=`*(self: AMQPExchangeMethod, ifUnused: bool) =
   case self.kind
   of AMQP_EXCHANGE_DELETE_SUBMETHOD:
     self.del.flags.ifUnused = ifUnused
   else:
     raise newException(FieldDefect, "No such field")
 
-proc noWait*(self: AMQPExchange): bool =
+
+proc noWait*(self: AMQPExchangeMethod): bool =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     result = self.declare.flags.noWait
@@ -395,7 +423,8 @@ proc noWait*(self: AMQPExchange): bool =
   else:
     raise newException(FieldDefect, "No such field")
 
-proc `noWait=`*(self: AMQPExchange, noWait: bool) =
+
+proc `noWait=`*(self: AMQPExchangeMethod, noWait: bool) =
   case self.kind
   of AMQP_EXCHANGE_DECLARE_SUBMETHOD:
     self.declare.flags.noWait = noWait
