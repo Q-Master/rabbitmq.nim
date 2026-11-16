@@ -73,10 +73,10 @@ proc newBodyFrame*(channelNum: uint16, size: int): Frame =
   result.fragment.setLen(size)
 
 
-proc newHeartBeatFrame*(channelNum: uint16): Frame =
+proc newHeartBeatFrame*(): Frame =
   result = Frame(
     frameType: ftHeartBeat,
-    channelNum: channelNum
+    channelNum: 0
   )
 
 
@@ -109,7 +109,7 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
     result = newBodyFrame(chNum, fSize.int)
     await src.recvInto(result.fragment[0].addr, fSize.int)
   of FRAME_HEARTBEAT:
-    result = newHeartBeatFrame(chNum)
+    result = newHeartBeatFrame()
   else:
     raise newException(KeyError, "Unknown field type: " & $fType)
   let fEnd = await src.readU8()

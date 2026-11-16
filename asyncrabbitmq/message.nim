@@ -1,4 +1,5 @@
 import ./internal/[properties, frame, exceptions]
+export properties
 
 
 type

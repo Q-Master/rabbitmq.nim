@@ -9,7 +9,7 @@ srcDir      = "asyncrabbitmq"
 
 # Dependencies
 requires "nim >= 2.0"
-requires "networkutils >= 0.6.1"
+requires "networkutils >= 0.7.2"
 
 
 task test, "tests":

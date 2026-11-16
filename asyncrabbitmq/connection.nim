@@ -16,7 +16,7 @@ const
 type
   RabbitMQ* = ref object
     pool: seq[RabbitMQConn]
-    current: int
+    waiters: seq[Future[RabbitMQConn]]
     hosts: RMQAddresses
     closing: bool
 
@@ -33,6 +33,7 @@ type
     channels: Table[uint16, AMQPChannel]
     timeout: int
     consumer: Future[void]
+    heartbeater: Future[void]
     retFuture: Future[AMQPMethod]
     blocked: bool
   
@@ -54,8 +55,7 @@ type
 
 
 proc acquire(pool: RabbitMQ): Future[RabbitMQConn] {.async.}
-proc release(conn: RabbitMQConn)
-proc `=destroy`(conn: var RabbitMQConnObj)
+proc release(pool: RabbitMQ, conn: RabbitMQConn)
 proc newRabbitMQConn(timeout: int): RabbitMQConn
 proc connect(conn: RabbitMQConn, adr: RMQAddress) {.async.}
 proc disconnect(conn: RabbitMQConn, fromClose: bool = false) {.async.}
@@ -68,6 +68,7 @@ proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, paylo
 proc waitMethods(conn: RabbitMQConn, expectedMethods: seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc syncRPC0(conn: RabbitMQConn, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods]): Future[AMQPMethod] {.async.}
 proc consume(conn: RabbitMQConn) {.async.}
+proc sendHeartbeats(conn: RabbitMQConn) {.async.}
 proc onClose(ch: AMQPChannel) {.async.}
 proc onFrame(ch: AMQPChannel, frame: Frame) {.async.}
 proc onDeliverReturn(ch: AMQPChannel) {.async.}
@@ -83,7 +84,7 @@ proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.}
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
   result.pool.setLen(poolsize)
-  result.current = 0
+  result.waiters = @[]
   result.closing = false
   result.hosts = addresses
   randomize()
@@ -121,7 +122,7 @@ proc close*(pool: RabbitMQ) {.async.} =
 
 # --- Payload
 
-proc newPayload*(meth: AMQPMethod, msg: Message): Payload =
+proc newPayload(meth: AMQPMethod, msg: Message): Payload =
   result = Payload(meth: meth, msg: msg)
 
 
@@ -138,7 +139,7 @@ proc newChannel*(connection: RabbitMQConn, channelId: uint16): AMQPChannel =
     dataFrame: nil,
     flowWaiters: @[]
   )
-  result.resultFuture.complete() # needed to RPC to work at first time. dirty hack because of non-nullable futurevar
+  result.resultFuture.complete() # needed to RPC to work at first time.
 
 
 proc rpc*(ch: AMQPChannel, meth: AMQPMethod, expectedMethods: sink seq[AMQPMethods], payload: Message = nil, noWait: bool = false): Future[Payload] =
@@ -192,7 +193,7 @@ proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.} =
     conn.channels.del(chId)
     raise
   finally:
-    conn.release()
+    pool.release(conn)
 
 
 proc close*(channel: AMQPChannel, kind: AMQP_CODES = AMQP_SUCCESS) {.async.} =
@@ -236,34 +237,40 @@ proc acquire(pool: RabbitMQ): Future[RabbitMQConn] {.async.} =
   ## Retrieves next non-in-use async socket for request
   if pool.closing:
     raise newException(RMQConnectionClosed, "Connection is safely closing now")
-  let stime = getTime()
-  while true:
-    template s: untyped = pool.pool[pool.current]
-    if s.connected:
-      if not s.inuse:
-        s.inuse = true
-        return s
-    pool.current.inc()
-    pool.current = pool.current.mod(pool.pool.len)
-    let diff = (getTime() - stime).inMilliseconds()
-    if diff > DEFAULT_NET_TIMEOUT:
-      raise newException(RMQConnectionFailed, "Failed to acquire connection")
-    if pool.current == 0:
-      await sleepAsync(100)
+  for conn in pool.pool:
+    if conn.connected and not conn.inuse:
+      conn.inuse = true
+      return conn
+
+  let fut = newFuture[RabbitMQConn]("acquire")
+  fut.addCallback do (f: Future[RabbitMQConn]):
+    let idx = pool.waiters.find(f)
+    if idx >= 0:
+      pool.waiters.delete(idx)
+  pool.waiters.add(fut)
+  let isCompleted = await fut.withTimeout(DEFAULT_NET_TIMEOUT)
+  if isCompleted:
+    result = await fut
+  else:
+    let exc = newException(RMQConnectionFailed, "Timeout acquiring connection from pool")
+    fut.fail(exc)
+    raise exc
 
 
-proc release(conn: RabbitMQConn) =
+proc release(pool: RabbitMQ, conn: RabbitMQConn) =
   conn.inuse = false
 
+  if pool.closing or not conn.connected:
+    return
 
-proc `=destroy`(conn: var RabbitMQConnObj) =
-  if conn.connected:
-    let r = RabbitMQConn.new
-    r[] = conn
-    try:
-      waitFor(r.disconnect())
-    except Exception:
-      discard
+  while pool.waiters.len > 0:
+    let waiter = pool.waiters[0]
+    pool.waiters.delete(0)
+
+    if not waiter.finished:
+      conn.inuse = true
+      waiter.complete(conn) # Мгновенно будим задачу!
+      break
 
 
 proc newRabbitMQConn(timeout: int): RabbitMQConn =
@@ -295,6 +302,9 @@ proc connect(conn: RabbitMQConn, adr: RMQAddress) {.async.} =
       conn.connected = true
       conn.consumer = conn.consume
       asyncCheck conn.consumer
+      if conn.heartbeat > 0:
+        conn.heartbeater = conn.sendHeartbeats()
+        asyncCheck conn.heartbeater
     else:
       conn.connected = false
       raise newException(RMQConnectionFailed, "Timeout connecting to RabbitMQ")
@@ -312,9 +322,14 @@ proc disconnect(conn: RabbitMQConn, fromClose: bool = false) {.async.} =
       else:
         await conn.closeConnection()
       conn.connected = false
+
       if conn.consumer != nil and not conn.consumer.finished:
         await conn.consumer
       conn.consumer = nil
+
+      if conn.heartbeater != nil and not conn.heartbeater.finished:
+        await conn.heartbeater
+      conn.heartbeater = nil
     result = conn.sock.close()
   conn.inuse = false
   conn.authenticated = false
@@ -426,7 +441,9 @@ proc needLogin(conn: RabbitMQConn, info: RMQAddress) {.async.} =
     clientChannelMax = uint16.high
   if serverFrameMax != 0 and serverFrameMax < clientFrameMax:
     clientFrameMax = serverFrameMax
-  if serverHeatbeat != 0 and serverHeatbeat < clientHeatbeat:
+  if clientHeatbeat == 0:
+    clientHeatbeat = serverHeatbeat
+  elif serverHeatbeat != 0 and serverHeatbeat < clientHeatbeat:
     clientHeatbeat = serverHeatbeat
   await conn.sendMethod(newConnectionTuneOkMethod(clientChannelMax, clientFrameMax, clientHeatbeat))
   let openOkOrClose = await conn.syncRPC0(newConnectionOpenMethod(info.vhost, "", true), @[AMQP_CONNECTION_OPEN_OK_METHOD, AMQP_CONNECTION_CLOSE_METHOD])
@@ -511,6 +528,23 @@ proc onBlocked(conn: RabbitMQConn, blocked: bool) =
       if ch.active:
         ch.processFlowWaiters()
 
+
+proc sendHeartbeats(conn: RabbitMQConn) {.async.} =
+  if conn.heartbeat == 0:
+    return
+
+  let hbInterval = conn.heartbeat * 1000
+
+  while conn.connected and conn.authenticated:
+    await sleepAsync(hbInterval)
+
+    if conn.connected and conn.authenticated:
+      try:
+        let frame = newHeartBeatFrame()
+        await conn.sock.encodeFrame(frame)
+      except Exception:
+        # Если сокет умер, прерываем цикл
+        break
 
 # -- pvt AMQPChannel
 
