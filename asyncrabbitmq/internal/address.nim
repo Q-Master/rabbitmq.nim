@@ -46,12 +46,16 @@ proc fromURL*(url: string): RMQAddress =
     raise newException(UriParseError, "AMQP address should start with \"amqp://\" or \"amqps://\"")
   result.host = rmqUri.hostname
   result.port = (if rmqUri.port.len == 0: Port(DEFAULT_PORTS[rmqUri.scheme]) else: Port(rmqUri.port.parseInt))
-  result.login = if url.contains('@'): newLogin(rmqUri.username, rmqUri.password) else: newLogin()
+  result.login =
+    if rmqUri.username.len > 0 or rmqUri.password.len > 0:
+      newLogin(rmqUri.username.decodeUrl(), rmqUri.password.decodeUrl())
+    else:
+      newLogin()
 
-  if rmqUri.path[0] == '/' and rmqUri.path.len == 1:
-    result.vhost = rmqUri.path
+  if rmqUri.path.len == 0 or rmqUri.path == "/":
+    result.vhost = "/"
   else:
-    result.vhost = (if rmqUri.path.len == 0: "/" else: rmqUri.path[1 .. ^1])
+    result.vhost = rmqUri.path[1 .. ^1].decodeUrl()
 
   if rmqUri.query.len > 0:
     let kvarr = rmqUri.query.split('&')

@@ -280,7 +280,6 @@ proc newRabbitMQConn(timeout: int): RabbitMQConn =
   result.authenticated = false
   result.timeout = timeout
   result.sock = newAsyncBufferedSocket(inBufSize = AMQP_FRAME_MAX, outBufSize = AMQP_FRAME_MAX, timeout = timeout)
-  #result.sock = newAsyncBufferedSocket(inBufSize = AMQP_FRAME_MAX, timeout = timeout)
   result.serverProps = nil
   result.channelMax = 0
   result.frameMax = AMQP_FRAME_MAX
@@ -388,10 +387,13 @@ proc sendMethod(conn: RabbitMQConn, meth: AMQPMethod, channel: uint16 = 0, paylo
   if not payload.isNil:
     let frame = newHeaderFrame(channel, payload.data.len.uint64, payload.props)
     await conn.sock.encodeFrame(frame)
+    let maxBody = conn.frameMax.int - (FRAME_HEADER_SIZE + 1)
+    if maxBody <= 0:
+      raise newException(AMQPFrameError, "Negotiated frame_max is too small: " & $conn.frameMax)
     var bLen = payload.data.len
     var start = 0
     while bLen > 0:
-      let chunkSize = if bLen > conn.frameMax.int: conn.frameMax.int else: bLen
+      let chunkSize = min(bLen, maxBody)
       let frame = newBodyFrame(channel, chunkSize)
       copyMem(frame.fragment[0].addr, payload.data[start].addr, chunkSize)
       await conn.sock.encodeFrame(frame)
@@ -533,7 +535,7 @@ proc sendHeartbeats(conn: RabbitMQConn) {.async.} =
   if conn.heartbeat == 0:
     return
 
-  let hbInterval = conn.heartbeat * 1000
+  let hbInterval = conn.heartbeat.int * 1000
 
   while conn.connected and conn.authenticated:
     await sleepAsync(hbInterval)

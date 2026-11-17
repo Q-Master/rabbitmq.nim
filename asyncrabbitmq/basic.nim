@@ -23,18 +23,21 @@ proc consume*(
   noLocal=false,
   noWait=false
   ): Future[ConsumerTag] {.async.} =
+  if cb.isNil:
+    raise newException(ValueError, "Consumer callback must be provided")
+  if noWait and consumerTag.len == 0:
+    raise newException(ValueError, "consumerTag must be set when noWait = true")
   let res = await queue.channel.rpc(
     newBasicConsumeMethod(
       queue.id, consumerTag,
       noLocal, noAck, exclusive, noWait,
       if args.isNil: newFieldTable() else: args
-    ), 
+    ),
     @[AMQP_BASIC_CONSUME_OK_METHOD],
     noWait = noWait
   )
-  if cb.isNil:
-    raise newException(ValueError, "Either consumer tag callback must present")
-  result = newConsumerTag(res.meth.basicObj.consumerTag, cb, noAck)
+  let tag = if noWait: consumerTag else: res.meth.basicObj.consumerTag
+  result = newConsumerTag(tag, cb, noAck)
   queue.channel.addConsumer(result)
 
 
@@ -78,7 +81,7 @@ proc get*(queue: Queue, noAck=false): Future[Envelope] {.async.} =
   if res.meth.idToAMQPMethod == AMQP_BASIC_GET_OK_METHOD:
     result = Envelope(
       msg: res.msg,
-      consumerTag: res.meth.basicObj.consumerTag,
+      consumerTag: "",
       deliveryTag: res.meth.basicObj.deliveryTag,
       exchange: res.meth.basicObj.exchange,
       routingKey: res.meth.basicObj.routingKey,
@@ -115,5 +118,3 @@ proc recover*(channel: AMQPChannel, requeue: bool = false) {.async.} =
     @[AMQP_BASIC_RECOVER_OK_METHOD]
   )
 
-
-proc queue*(consumerTag: ConsumerTag): Queue = consumerTag.queue

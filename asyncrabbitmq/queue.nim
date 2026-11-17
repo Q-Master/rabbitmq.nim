@@ -42,6 +42,8 @@ proc queueDeclare*(
   var args = args
   if args.isNil:
     args = newFieldTable()
+  if noWait and queue.len == 0:
+    raise newException(ValueError, "queue name must be set when noWait = true")
   let res = await channel.rpc(
     newQueueDeclareMethod(
       queue, passive, durable, exclusive, autoDelete, noWait, args
