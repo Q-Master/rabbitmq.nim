@@ -83,7 +83,7 @@ proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.}
 
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
-  result.pool.setLen(poolsize)
+  result.pool.setLenUninit(poolsize)
   result.waiters = @[]
   result.closing = false
   result.hosts = addresses
@@ -581,25 +581,25 @@ proc onFrame(ch: AMQPChannel, frame: Frame) {.async.} =
     #echo "Header: " & $ch.resultFuture.finished & " " & $ch.dataFrame.isNil
     if ch.resultFuture.finished and ch.dataFrame.isNil:
       raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
+    elif ch.dataFrame.isNil:
+      if ch.resultFuture.mget().msg.build(frame):
+        ch.resultFuture.complete()
     else:
-      if ch.dataFrame.isNil:
-        discard ch.resultFuture.mget().msg.build(frame)
-      else:
-        discard ch.dataFrame.msg.build(frame)
+      if ch.dataFrame.msg.build(frame):
+        await ch.onDeliverReturn()
+        ch.dataFrame = nil
   of ftBody:
     #echo "Body: " & $ch.resultFuture.finished & " " & $ch.dataFrame.isNil
     if ch.resultFuture.finished and ch.dataFrame.isNil:
-      raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
+      if frame.fragment.len > 0:
+        raise newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected")
+    elif ch.dataFrame.isNil:
+      if ch.resultFuture.mget.msg.build(frame):
+        ch.resultFuture.complete()
     else:
-      if ch.dataFrame.isNil:
-        let success = ch.resultFuture.mget.msg.build(frame)
-        if success:
-          ch.resultFuture.complete()
-      else:
-        let success = ch.dataFrame.msg.build(frame)
-        if success:
-          await ch.onDeliverReturn()
-          ch.dataFrame = nil
+      if ch.dataFrame.msg.build(frame):
+        await ch.onDeliverReturn()
+        ch.dataFrame = nil
   else:
     fut.fail(newException(AMQPUnexpectedFrame, "Frame " & $frame.frameType & " is unexpected"))
 

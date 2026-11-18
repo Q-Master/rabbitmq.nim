@@ -70,7 +70,7 @@ proc newBodyFrame*(channelNum: uint16, size: int): Frame =
     channelNum: channelNum,
     size: size.uint32
   )
-  result.fragment.setLen(size)
+  result.fragment.setLenUninit(size)
 
 
 proc newHeartBeatFrame*(): Frame =
@@ -107,7 +107,8 @@ proc decodeFrame*(src: AsyncBufferedSocket, startFrame: bool = false): Future[Fr
     result = newHeaderFrame(chNum, bodySize, props)
   of FRAME_BODY:
     result = newBodyFrame(chNum, fSize.int)
-    await src.recvInto(result.fragment[0].addr, fSize.int)
+    if fSize > 0:
+      await src.recvInto(result.fragment[0].addr, fSize.int)
   of FRAME_HEARTBEAT:
     result = newHeartBeatFrame()
   else:

@@ -408,8 +408,9 @@ proc decodeField(s: AsyncBufferedSocket): Future[Field] {.async.} =
   of 'x':
     result = Field(kind: dtBytes)
     let length = await s.readBEU32()
-    result.bytesVal.setLen(length)
-    await s.recvInto(result.bytesVal[0].addr, length.int32)
+    if length > 0:
+      result.bytesVal.setLenUninit(length)
+      await s.recvInto(result.bytesVal[0].addr, length.int32)
   of 'A':
     let arrayVal= await s.decodeArray()
     result = Field(kind: dtArray, arrayVal: arrayVal)

@@ -25,13 +25,21 @@ proc newMessage*(data: string, props: Properties): Message = newMessage(data.toO
 
 
 proc build*(msg: Message, frame: Frame): bool =
-  if frame.frameType == ftHeader and msg.props.isNil:
+  case frame.frameType
+  of ftHeader:
+    if not msg.props.isNil:
+      raise newException(AMQPUnexpectedFrame, "Duplicate content header")
     msg.props = frame.props
-    msg.data.setLen(frame.bodySize)
+    msg.data.setLenUninit(frame.bodySize.int)
     msg.pos = 0
-  elif frame.frameType == ftBody and msg.pos != msg.data.len.uint64:
-    copyMem(msg.data[msg.pos].addr, frame.fragment[0].addr, frame.fragment.len)
-    msg.pos += frame.fragment.len.uint64
+  of ftBody:
+    if msg.props.isNil:
+      raise newException(AMQPUnexpectedFrame, "Body frame before content header")
+    if frame.fragment.len > 0:
+      if msg.pos + frame.fragment.len.uint64 > msg.data.len.uint64:
+        raise newException(AMQPUnexpectedFrame, "Body frame exceeds declared body size")
+      copyMem(msg.data[msg.pos].addr, frame.fragment[0].addr, frame.fragment.len)
+      msg.pos += frame.fragment.len.uint64
   else:
     raise newException(AMQPUnexpectedFrame, "Unexpected frame")
-  result = msg.data.len.uint64 == msg.pos
+  result = msg.pos == msg.data.len.uint64
