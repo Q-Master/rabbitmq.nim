@@ -280,7 +280,7 @@ proc newChannelCloseMethod*(replyCode: uint16, replyText: string, classId: uint1
   result.channelObj = newChannelClose(replyCode, replyText, classId, methodId)
 
 
-proc newChannelCloseMethod*(): AMQPMethod =
+proc newChannelCloseOkMethod*(): AMQPMethod =
   result = newMethod(CHANNEL_CLOSE_OK_METHOD_ID)
   result.channelObj = newChannelCloseOk()
 

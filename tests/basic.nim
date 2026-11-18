@@ -1,15 +1,18 @@
 import std/[unittest, asyncdispatch]
 import asyncrabbitmq/[asyncrabbitmq, connection, exchange, queue, basic, message, consumertag]
 
+
+const RMQ_URL {.strdefine.} = "amqp://guest:guest@localhost/"
+
+
 suite "RabbitMQ basic":
   const message = "Message"
   setup:
     discard
 
-
   test "Basic publish":
     proc testBasicPublish() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
@@ -36,7 +39,7 @@ suite "RabbitMQ basic":
 
   test "Basic consume":
     proc testBasicPublish() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
@@ -69,7 +72,7 @@ suite "RabbitMQ basic":
         check env.msg.props.headers.hasKey("rpc")
         check env.msg.props.headers["rpc"].stringVal == "OK"
         resfut.complete()
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
@@ -116,7 +119,7 @@ suite "RabbitMQ basic":
         check msg.props.headers["rpc"].stringVal == "OK"
         resfut.complete()
       
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"

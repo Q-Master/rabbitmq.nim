@@ -1,13 +1,17 @@
 import std/[unittest, asyncdispatch]
 import asyncrabbitmq/[asyncrabbitmq, connection, queue, exchange]
 
+
+const RMQ_URL {.strdefine.} = "amqp://guest:guest@localhost/"
+
+
 suite "RabbitMQ queue":
   setup:
     discard
 
   test "Queue declare/delete":
     proc testChannelCreation() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
@@ -28,7 +32,7 @@ suite "RabbitMQ queue":
 
   test "Queue declare/purge":
     proc testChannelCreation() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
@@ -49,7 +53,7 @@ suite "RabbitMQ queue":
 
   test "Queue bind/unbind":
     proc testChannelCreation() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"

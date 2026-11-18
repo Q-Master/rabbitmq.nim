@@ -9,7 +9,7 @@ type
 
 type
   # AMQP Errors
-  AMQPError = object of CatchableError
+  AMQPError* = object of CatchableError
     code*: int
   AMQPIncompatibleProtocol* = object of AMQPError
   AMQPContentTooLarge* = object of AMQPError ## The payload is too large for server to accept (311)
@@ -48,43 +48,29 @@ template newAMQPException*(exceptn: typedesc, message: string, value: int; paren
   (ref exceptn)(msg: message, code: value, parent: parentException)
 
 
-proc raiseException*(code: uint16) =
+proc newAMQPExceptionForCode*(code: uint16, message: string = ""): ref AMQPError =
   case code
-  of 311:
-    raise newAMQPException(AMQPContentTooLarge, "", code.int)
-  of 312:
-    raise newAMQPException(AMQPNoRoute, "", code.int)
-  of 313:
-    raise newAMQPException(AMQPNoConsumers, "", code.int)
-  of 320:
-    raise newAMQPException(AMQPConnectionForced, "", code.int)
-  of 402:
-    raise newAMQPException(AMQPInvalidPath, "", code.int)
-  of 403:
-    raise newAMQPException(AMQPAccessRefused, "", code.int)
-  of 404:
-    raise newAMQPException(AMQPNotFound, "", code.int)
-  of 405:
-    raise newAMQPException(AMQPResourceLocked, "", code.int)
-  of 406:
-    raise newAMQPException(AMQPPreconditionFailed, "", code.int)
-  of 501:
-    raise newAMQPException(AMQPFrameError, "", code.int)
-  of 502:
-    raise newAMQPException(AMQPSyntaxError, "", code.int)
-  of 503:
-    raise newAMQPException(AMQPCommandInvalid, "", code.int)
-  of 504:
-    raise newAMQPException(AMQPChannelError, "", code.int)
-  of 505:
-    raise newAMQPException(AMQPUnexpectedFrame, "", code.int)
-  of 506:
-    raise newAMQPException(AMQPResourceError, "", code.int)
-  of 530:
-    raise newAMQPException(AMQPNotAllowed, "", code.int)
-  of 540: 
-    raise newAMQPException(AMQPNotImplemented, "", code.int)
-  of 541: 
-    raise newAMQPException(AMQPInternalError, "", code.int)
-  else:
-    discard
+  of 311: result = newAMQPException(AMQPContentTooLarge, message, code.int)
+  of 312: result = newAMQPException(AMQPNoRoute, message, code.int)
+  of 313: result = newAMQPException(AMQPNoConsumers, message, code.int)
+  of 320: result = newAMQPException(AMQPConnectionForced, message, code.int)
+  of 402: result = newAMQPException(AMQPInvalidPath, message, code.int)
+  of 403: result = newAMQPException(AMQPAccessRefused, message, code.int)
+  of 404: result = newAMQPException(AMQPNotFound, message, code.int)
+  of 405: result = newAMQPException(AMQPResourceLocked, message, code.int)
+  of 406: result = newAMQPException(AMQPPreconditionFailed, message, code.int)
+  of 501: result = newAMQPException(AMQPFrameError, message, code.int)
+  of 502: result = newAMQPException(AMQPSyntaxError, message, code.int)
+  of 503: result = newAMQPException(AMQPCommandInvalid, message, code.int)
+  of 504: result = newAMQPException(AMQPChannelError, message, code.int)
+  of 505: result = newAMQPException(AMQPUnexpectedFrame, message, code.int)
+  of 506: result = newAMQPException(AMQPResourceError, message, code.int)
+  of 530: result = newAMQPException(AMQPNotAllowed, message, code.int)
+  of 540: result = newAMQPException(AMQPNotImplemented, message, code.int)
+  of 541: result = newAMQPException(AMQPInternalError, message, code.int)
+  else:   result = newAMQPException(AMQPError, message, code.int)
+
+
+proc raiseException*(code: uint16, message: string = "") =
+  if code != 200: # AMQP_SUCCESS
+    raise newAMQPExceptionForCode(code, message)

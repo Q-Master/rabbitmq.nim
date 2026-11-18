@@ -1,13 +1,17 @@
 import std/[unittest, asyncdispatch]
 import asyncrabbitmq/[asyncrabbitmq, connection]
 
+
+const RMQ_URL {.strdefine.} = "amqp://guest:guest@localhost/"
+
+
 suite "RabbitMQ channel":
   setup:
     discard
 
   test "Channel create/close":
     proc testChannelCreation() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         let ch = await connection.connect()

@@ -1,13 +1,17 @@
 import std/[unittest, asyncdispatch]
 import asyncrabbitmq/[asyncrabbitmq, connection, exchange]
 
+
+const RMQ_URL {.strdefine.} = "amqp://guest:guest@localhost/"
+
+
 suite "RabbitMQ exchange":
   setup:
     discard
 
   test "Exchange declare/delete":
     proc testChannelCreation() {.async.} =
-      var address = "amqp://guest:guest@localhost/".fromURL()
+      var address = RMQ_URL.fromURL()
       var connection = newRabbitMQ(address, 1)
       try:
         checkpoint "Allocating channel"
