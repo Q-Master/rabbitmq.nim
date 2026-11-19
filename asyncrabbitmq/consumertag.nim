@@ -47,7 +47,6 @@ proc hash*(c: ConsumerTag): Hash = c.id.hash()
 proc `==`*(a, b: ConsumerTag): bool = a.id == b.id
 
 
-proc call*(ct: ConsumerTag, dt: uint64, ex: string, rk: string, msg: Message, redelivered: bool = false) {.async.} =
+proc call*(ct: ConsumerTag, dt: uint64, ex: string, rk: string, msg: Message, redelivered: bool = false): Future[void] =
   let env = ct.newEnvelope(dt, ex, rk, msg, redelivered)
-  asyncCheck ct.onDeliver(env, ct.noAck)
-
+  result = ct.onDeliver(env, ct.noAck)

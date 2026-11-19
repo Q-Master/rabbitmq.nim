@@ -1,5 +1,6 @@
 import tables
 
+
 const
   PROTOCOL_VERSION* = (0.uint8, 9.uint8, 1.uint8)
   DEFAULT_PORT* = 5672
@@ -10,6 +11,7 @@ const
   DEFAULT_POOLSIZE* = 5
   DEFAULT_USER* = "guest"
   DEFAULT_PASSWORD* = "guest"
+  DEFAULT_RPC_TIMEOUT* = 30_000 # ms
 
 
 let DEFAULT_PORTS* = {
