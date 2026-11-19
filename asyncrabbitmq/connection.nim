@@ -85,7 +85,7 @@ proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.}
 
 proc newRabbitMQ*(addresses: RMQAddresses, poolsize: int = DEFAULT_POOLSIZE): RabbitMQ =
   result.new
-  result.pool.setLenUninit(poolsize)
+  result.pool.setLen(poolsize)
   result.waiters = @[]
   result.closing = false
   result.hosts = addresses
