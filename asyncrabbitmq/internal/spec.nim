@@ -21,7 +21,7 @@ let DEFAULT_PORTS* = {
 const
   PRODUCT* = "rabbitmq.nim"
   PLATFORM* = "Nim " & NimVersion
-  RMQVERSION* = "0.2.1"
+  RMQVERSION* = "0.2.2"
   AUTHOR* = "Vladimir Berezenko <qmaster2000@gmail.com>"
   INFORMATION* = "See https://github.com/Q-Master/rabbitmq.nim"
 
