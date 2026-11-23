@@ -17,7 +17,7 @@ suite "RabbitMQ queue":
         checkpoint "Allocating channel"
         let chan = await connection.connect()
         checkpoint "Creating queue"
-        let q = await chan.queueDeclare("testQueue")
+        let q = await chan.queueDeclare("testQueue", autoDelete = true)
         check q.id == "testQueue"
         checkpoint "Deleting the queue"
         let msgCount = await q.delete()
@@ -38,7 +38,7 @@ suite "RabbitMQ queue":
         checkpoint "Allocating channel"
         let chan = await connection.connect()
         checkpoint "Creating queue"
-        let q = await chan.queueDeclare("testQueue")
+        let q = await chan.queueDeclare("testQueue", autoDelete = true)
         check q.id == "testQueue"
         checkpoint "Purging the queue"
         let msgCount = await q.purge()
@@ -59,7 +59,7 @@ suite "RabbitMQ queue":
         checkpoint "Allocating channel"
         let chan = await connection.connect()
         checkpoint "Creating queue"
-        let q = await chan.queueDeclare("testQueue")
+        let q = await chan.queueDeclare("testQueue", autoDelete = true)
         check q.id == "testQueue"
         checkpoint "Binding the queue"
         let exch = newExchange("amq.direct", nil)

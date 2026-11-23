@@ -36,14 +36,16 @@ type
 
 proc queueDeclare*(
   channel: AMQPChannel, queue: string,
-  passive = false, durable = false, exclusive = false, autoDelete = false, noWait = false,
+  passive = false, durable = true, exclusive = false, autoDelete = false, noWait = false,
   args: FieldTable = nil
   ): Future[Queue] {.async.} =
+  if not durable and not exclusive:
+    raise newException(ValueError, "Queue can't be both not durable and not exclusive")
   var args = args
   if args.isNil:
     args = newFieldTable()
   if noWait and queue.len == 0:
-    raise newException(ValueError, "queue name must be set when noWait = true")
+    raise newException(ValueError, "Queue name must be set when noWait = true")
   let res = await channel.rpc(
     newQueueDeclareMethod(
       queue, passive, durable, exclusive, autoDelete, noWait, args

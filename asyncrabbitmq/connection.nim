@@ -51,6 +51,11 @@ type
     flowWaiters: seq[Future[void]]
     closing: bool
     rpcQueue: Deque[PendingRPC]
+    confirms: bool
+    publishSeq: uint64
+    pendingConfirms: OrderedTable[uint64, Future[void]]
+    confirmWaiters: seq[Future[void]]
+    confirmTimeout: int
 
   Payload* = ref object
     meth*: AMQPMethod
@@ -91,6 +96,10 @@ proc sendHead(ch: AMQPChannel) {.async.}
 proc completeHead(ch: AMQPChannel, content: Payload)
 proc failHead(ch: AMQPChannel, exc: ref CatchableError)
 proc enqueue(ch: AMQPChannel, meth: AMQPMethod, expected: sink seq[AMQPMethods], data: Message): Future[Payload]
+proc onConfirmAck(ch: AMQPChannel, tag: uint64, multiple: bool)
+proc onConfirmNack(ch: AMQPChannel, tag: uint64, multiple: bool)
+proc checkConfirmsDrained(ch: AMQPChannel)
+proc confirmWatchdog(ch: AMQPChannel, tag: uint64, fut: Future[void]) {.async.}
 
 
 proc openChannel*(pool: RabbitMQ): Future[AMQPChannel] {.async.}
@@ -153,7 +162,9 @@ proc newChannel*(connection: RabbitMQConn, channelId: uint16): AMQPChannel =
     active: true,
     dataFrame: nil,
     flowWaiters: @[],
-    rpcQueue: initDeque[PendingRPC]()
+    rpcQueue: initDeque[PendingRPC](),
+    pendingConfirms: initOrderedTable[uint64, Future[void]](),
+    confirmWaiters: @[],
   )
 
 
@@ -219,6 +230,56 @@ proc removeConsumer*(ch: AMQPChannel, consumer: ConsumerTag) =
 
 proc `onReturn=`*(ch: AMQPChannel, cb: proc(msg: Message): Future[void]) =
   ch.onReturn = cb
+
+
+proc confirms*(ch: AMQPChannel): bool = ch.confirms
+
+
+proc pendingConfirms*(ch: AMQPChannel): int = ch.pendingConfirms.len
+
+
+proc `confirmTimeout=`*(ch: AMQPChannel, ms: int) = ch.confirmTimeout = ms
+
+
+proc addConfirmWaiter*(ch: AMQPChannel, fut: Future[void]) =
+  ch.confirmWaiters.add(fut)
+
+
+proc enableConfirms*(ch: AMQPChannel) =
+  if ch.confirms and ch.pendingConfirms.len > 0:
+    let exc = newException(RMQConnectionFailed, "Confirm mode re-selected")
+    for fut in ch.pendingConfirms.values:
+      if not fut.finished:
+        fut.fail(exc)
+    ch.pendingConfirms.clear()
+    ch.checkConfirmsDrained()
+  ch.confirms = true
+  ch.publishSeq = 0
+
+
+proc registerConfirm*(ch: AMQPChannel): Future[void] =
+  if ch.confirms:
+    ch.publishSeq.inc()
+    result = newFuture[void]("publishConfirm")
+    ch.pendingConfirms[ch.publishSeq] = result
+    if ch.confirmTimeout > 0:
+      asyncCheck ch.confirmWatchdog(ch.publishSeq, result)
+  else:
+    return nil
+
+
+proc unregisterConfirm*(ch: AMQPChannel, fut: Future[void]) =
+  if not fut.isNil:
+    var toDel: uint64 = 0
+    for tag, f in ch.pendingConfirms.pairs:
+      if f == fut:
+        toDel = tag
+        break
+    if toDel > 0:
+      ch.pendingConfirms.del(toDel)
+    if not fut.finished:
+      fut.fail(newException(RMQConnectionFailed, "Publish was not sent"))
+    ch.checkConfirmsDrained()
 
 
 # -- pvt RMQ
@@ -605,8 +666,10 @@ proc onFrame(ch: AMQPChannel, frame: Frame) {.async.} =
       let ct = frame.meth.basicObj.consumerTag
       if ch.consumers.hasKey(ct):
         ch.consumers.del(ct)
-    of AMQP_BASIC_ACK_METHOD, AMQP_BASIC_NACK_METHOD:
-      discard
+    of AMQP_BASIC_ACK_METHOD:
+      ch.onConfirmAck(frame.meth.basicObj.deliveryTag, frame.meth.basicObj.multiple)
+    of AMQP_BASIC_NACK_METHOD:
+      ch.onConfirmNack(frame.meth.basicObj.deliveryTag, frame.meth.basicObj.multiple)
     else:
       if ch.rpcQueue.len == 0:
         discard
@@ -649,6 +712,14 @@ proc abortChannel(ch: AMQPChannel, exc: ref CatchableError) =
     let p = ch.rpcQueue.popFirst()
     if not p.fut.finished:
       p.fut.fail(exc)
+  for fut in ch.pendingConfirms.values:
+    if not fut.finished:
+      fut.fail(exc)
+  ch.pendingConfirms.clear()
+  for fut in ch.confirmWaiters:
+    if not fut.finished:
+      fut.fail(exc)
+  ch.confirmWaiters = @[]
   ch.cancelFlowWaiters(exc)
   ch.consumers.clear()
   ch.dataFrame = nil
@@ -773,3 +844,51 @@ proc failHead(ch: AMQPChannel, exc: ref CatchableError) =
       p.fut.fail(exc)
     if ch.rpcQueue.len > 0:
       asyncCheck ch.sendHead()
+
+
+proc checkConfirmsDrained(ch: AMQPChannel) =
+  if ch.pendingConfirms.len == 0 and ch.confirmWaiters.len > 0:
+    let waiters = ch.confirmWaiters
+    ch.confirmWaiters = @[]
+    for fut in waiters:
+      if not fut.finished:
+        fut.complete()
+
+
+proc confirmWatchdog(ch: AMQPChannel, tag: uint64, fut: Future[void]) {.async.} =
+  let ok = await fut.withTimeout(ch.confirmTimeout)
+  if not ok and not fut.finished:
+    ch.pendingConfirms.del(tag)
+    fut.fail(newException(RMQConnectionFailed, "Publish confirm timed out, tag " & $tag))
+    ch.checkConfirmsDrained()
+
+
+proc settleConfirms(ch: AMQPChannel, tag: uint64, multiple: bool, exc: ref CatchableError) =
+  if multiple:
+    var settled: seq[uint64] = @[]
+    for k, fut in ch.pendingConfirms.pairs:
+      if k > tag:
+        break
+      if not fut.finished:
+        if exc.isNil: fut.complete() else: fut.fail(exc)
+      settled.add(k)
+    for k in settled:
+      ch.pendingConfirms.del(k)
+  else:
+    let fut = ch.pendingConfirms.getOrDefault(tag, nil)
+    if not fut.isNil:
+      if not fut.finished:
+        if exc.isNil: fut.complete() else: fut.fail(exc)
+      ch.pendingConfirms.del(tag)
+  ch.checkConfirmsDrained()
+
+
+proc onConfirmAck(ch: AMQPChannel, tag: uint64, multiple: bool) =
+  if ch.confirms:
+    ch.settleConfirms(tag, multiple, nil)
+
+
+proc onConfirmNack(ch: AMQPChannel, tag: uint64, multiple: bool) =
+  if ch.confirms:
+    ch.settleConfirms(tag, multiple,
+      newException(RMQPublishNacked, "Broker nacked publish, tag " & $tag))

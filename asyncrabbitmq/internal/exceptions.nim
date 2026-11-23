@@ -5,6 +5,7 @@ type
   RMQUnexpectedMethod* = object of CatchableError
   RMQChannelsExhausted* = object of CatchableError
   RMQPNoSuchChannel* = object of CatchableError
+  RMQPublishNacked* = object of CatchableError
 
 
 type

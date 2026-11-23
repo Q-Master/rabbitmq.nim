@@ -57,18 +57,26 @@ proc cancel*(ch: AMQPChannel, consumerTag: ConsumerTag, noWait=false): Future[Co
 
 
 proc publish*(
-  exchange: Exchange, routingKey: string, msg: Message, 
+  exchange: Exchange, routingKey: string, msg: Message,
   mandatory=false, immediate=false
   ) {.async.} =
-  if not exchange.channel.active or exchange.channel.blocked:
-    let waiter = newFuture[void]("Waiting for flow to activate")
-    exchange.channel.addOnFlow(waiter)
+  let ch = exchange.channel
+  if not ch.active or ch.blocked:
+    let waiter = newFuture[void]("flow")
+    ch.addOnFlow(waiter)
     await waiter
-  let res {.used.} = await exchange.channel.rpc(
-    newBasicPublishMethod(exchange.id, routingKey, mandatory, immediate), 
-    @[],
-    payload = msg
-  )
+  let confirm = ch.registerConfirm()
+  try:
+    let res {.used.} = await ch.rpc(
+      newBasicPublishMethod(exchange.id, routingKey, mandatory, immediate),
+      @[],
+      payload = msg
+    )
+  except CatchableError:
+    ch.unregisterConfirm(confirm)
+    raise
+  if not confirm.isNil:
+    await confirm
 
 
 proc get*(queue: Queue, noAck=false): Future[Envelope] {.async.} =
